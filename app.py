@@ -7,6 +7,108 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
+import os
+from openai import OpenAI
+
+# Load key safely (must be in environment variable)
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+gpt_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+
+
+def gpt_caption_analysis(caption: str, context: dict) -> dict:
+    """
+    Uses GPT-4.1-mini to:
+      - classify sentiment
+      - explain reasoning
+      - provide 2–3 improvement tips
+      - generate an improved caption
+
+    If no API key is available, falls back to heuristic analysis.
+    """
+
+    # -------------- FALLBACK (NO API KEY) --------------
+    if gpt_client is None:
+        return {
+            "sentiment": "NEUTRAL",
+            "explanation": "Using local fallback (no GPT API available).",
+            "suggestions": [
+                "Add more hype or emotion to the caption.",
+                "Try a clearer call to action.",
+                "Test a better posting hour based on player activity."
+            ],
+            "improved_caption": caption or "This is going to be huge! Tell us what you think below!"
+        }
+
+    # -------------- GPT-4.1 MINI PROMPT --------------
+    system_prompt = """
+You are a senior social media strategist for gaming brands.
+Always return a valid JSON object ONLY.
+Sentiment must be POSITIVE, NEUTRAL or NEGATIVE.
+"""
+
+    user_prompt = f"""
+Analyze the following Instagram caption and its posting context:
+
+Caption:
+{caption}
+
+Context:
+- Post type: {context.get("post_type")}
+- Weekday: {context.get("weekday")}
+- Posting hour (UTC): {context.get("hour")}
+- Hashtags: {context.get("hashtags")}
+- Topic: {context.get("topic")}
+- Profile: {context.get("profile")}
+
+Tasks:
+1. Classify the sentiment (POSITIVE / NEUTRAL / NEGATIVE).
+2. Explain your reasoning in 1–2 sentences.
+3. Provide 2–3 objective improvement suggestions (content, clarity, CTA, timing).
+4. Generate an improved caption in English (gaming tone, hype, CTA, concise).
+
+Return ONLY valid JSON with EXACT keys:
+{
+  "sentiment": "...",
+  "explanation": "...",
+  "suggestions": ["...", "..."],
+  "improved_caption": "..."
+}
+"""
+
+    try:
+        response = gpt_client.responses.create(
+            model="gpt-4.1-mini",
+            input=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            response_format={"type": "json_object"},
+            max_output_tokens=400,
+        )
+
+        import json
+        raw = response.output[0].content[0].text
+        data = json.loads(raw)
+
+        # Ensures all fields exist:
+        data.setdefault("sentiment", "NEUTRAL")
+        data.setdefault("explanation", "")
+        data.setdefault("suggestions", [])
+        data.setdefault("improved_caption", caption)
+
+        return data
+
+    except Exception as e:
+        return {
+            "sentiment": "NEUTRAL",
+            "explanation": f"GPT fallback due to error: {e}",
+            "suggestions": [
+                "Try clarifying the intention of the post.",
+                "Add emotional or hype-driven language.",
+            ],
+            "improved_caption": caption
+        }
+
 
 from sklearn.tree import DecisionTreeRegressor
 from sklearn.model_selection import train_test_split
@@ -381,9 +483,8 @@ st.markdown("")
 # ---------------------------------------------------------
 
 if st.button("✨ Evaluate caption & predict", type="primary"):
-    with st.spinner("Consulting the HypeQuest crystal ball... 🔮"):
+    with st.spinner("Thinking with AI... 🔮"):
 
-        # 1) Sentiment + tips (GPT when available, otherwise fallback)
         context = {
             "post_type": post_type,
             "weekday": weekday,
@@ -392,45 +493,43 @@ if st.button("✨ Evaluate caption & predict", type="primary"):
             "topic": topic,
             "profile": profile,
         }
-        gpt_result = gpt_caption_analysis(caption_text, context)
-        sentiment_label = gpt_result["sentiment"].upper()
-        sentiment_explanation = gpt_result.get("explanation", "")
-        suggestions = gpt_result.get("suggestions", [])
-        improved_caption = gpt_result.get("improved_caption", caption_text)
 
-        # 2) Engagement prediction (Decision Tree on synthetic “API” data)
-        new_row = pd.DataFrame(
-            [
-                dict(
-                    post_type=post_type,
-                    weekday=weekday,
-                    hour_utc=hour,
-                    hashtags=hashtags,
-                    topic=topic,
-                    caption_length=caption_length if caption_length > 0 else 40,
-                    month=month,
-                )
-            ]
-        )
-        new_X = pd.get_dummies(new_row, drop_first=True).reindex(
+        # ---- IA GENERATIVA (GPT-4.1-mini ou fallback) ----
+        gpt_data = gpt_caption_analysis(caption_text, context)
+
+        sentiment_label = gpt_data["sentiment"].upper()
+        sentiment_explanation = gpt_data["explanation"]
+        suggestions = gpt_data["suggestions"]
+        improved_caption = gpt_data["improved_caption"]
+
+        # ---- ENGAGEMENT MODEL (seu modelo atual permanece igual) ----
+        new_row = pd.DataFrame([{
+            "post_type": post_type,
+            "weekday": weekday,
+            "hour_utc": hour,
+            "hashtags": hashtags,
+            "topic": topic,
+            "caption_length": caption_length,
+            "month": month,
+        }])
+
+        X_new = pd.get_dummies(new_row, drop_first=True).reindex(
             columns=eng_feature_columns, fill_value=0
         )
-        predicted_eng_rate = float(eng_model.predict(new_X)[0])
+        predicted_rate = float(eng_model.predict(X_new)[0])
+        predicted_interactions = int(predicted_rate * followers)
 
-        # Use followers from fake data to convert rate → interactions
-        followers = int(historical_df["followers"].iloc[0])
-        predicted_interactions = int(predicted_eng_rate * followers)
-
-        # store results to session_state to render below
-        st.session_state["last_result"] = dict(
+        # Store for display
+        st.session_state["result"] = dict(
             sentiment_label=sentiment_label,
             sentiment_explanation=sentiment_explanation,
             suggestions=suggestions,
             improved_caption=improved_caption,
+            predicted_rate=predicted_rate,
             predicted_interactions=predicted_interactions,
-            predicted_eng_rate=predicted_eng_rate,
             followers=followers,
         )
+
 
 # ---------------------------------------------------------
 # 2. Prediction results (only if we have something)
