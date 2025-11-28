@@ -4,6 +4,29 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.tree import DecisionTreeRegressor
 import io
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+analyzer = SentimentIntensityAnalyzer()
+# -------------------------------------------------------
+# SENTIMENT PREDICTION FUNCTION (ADD THIS RIGHT AFTER IMPORTS)
+# -------------------------------------------------------
+
+def predict_sentiment_from_text(text: str) -> str:
+    """
+    Predict sentiment (positive / neutral / negative) from caption text
+    using VADER sentiment analysis.
+    """
+    if not text or not text.strip():
+        return "neutral"
+
+    scores = analyzer.polarity_scores(text)
+    comp = scores["compound"]
+
+    if comp >= 0.05:
+        return "positive"
+    elif comp <= -0.05:
+        return "negative"
+    else:
+        return "neutral"
 
 # ---------------------------------------------------------
 # CONFIG
