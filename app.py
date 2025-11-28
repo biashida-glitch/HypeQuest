@@ -4,152 +4,212 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.tree import DecisionTreeRegressor
 
-# ---------------- CONFIG GERAL ----------------
-st.set_page_config(page_title="HypeQuest – Predição de Engajamento", layout="wide")
-
-st.title("🔥 HypeQuest – Predição de Engajamento em Posts do Instagram")
-st.caption("Protótipo para hackathon usando dados simulados + modelo de Machine Learning.")
-
-st.markdown("---")
-
-# ---------------- CARREGAR DADOS ----------------
-st.sidebar.header("📁 Dados de entrada")
-
-uploaded_file = st.sidebar.file_uploader(
-    "Envie o dataset de posts (CSV)", type=["csv"],
-    help="Se não enviar nada, o app usa o arquivo hypequest_dataset_ficticio.csv do repositório."
+# ---------------- BASIC CONFIG ----------------
+st.set_page_config(
+    page_title="HypeQuest – Instagram Engagement Prediction",
+    layout="wide"
 )
 
-if uploaded_file is not None:
-    df = pd.read_csv(uploaded_file)
-    origem = "Arquivo enviado"
-else:
-    df = pd.read_csv("hypequest_dataset_ficticio.csv")  # arquivo que você subiu no repo
-    origem = "Dataset fictício padrão (hypequest_dataset_ficticio.csv)"
+# ------------- DATA LOADING LAYER -------------
+@st.cache_data
+def load_data(uploaded_file=None):
+    """
+    For now: load from CSV.
+    Future: replace this function to pull data from an API
+    and return a pandas DataFrame with the same columns.
+    """
+    if uploaded_file is not None:
+        df = pd.read_csv(uploaded_file)
+        source = "Uploaded CSV"
+    else:
+        df = pd.read_csv("hypequest_dataset_ficticio.csv")
+        source = "Default demo dataset (hypequest_dataset_ficticio.csv)"
 
-st.sidebar.success(f"Dados carregados de: {origem}")
+    # Ensure date column is datetime
+    if "data_post" in df.columns:
+        df["data_post"] = pd.to_datetime(df["data_post"], errors="coerce")
+    else:
+        # In case real data comes without this column, just create a dummy
+        df["data_post"] = pd.NaT
 
-st.subheader("👀 Visão geral dos dados")
-st.write("Primeiras linhas do dataset:")
-st.dataframe(df.head())
+    # Create month/year if missing
+    if "mes" in df.columns:
+        df["month"] = df["mes"]
+    else:
+        df["month"] = df["data_post"].dt.month.fillna(1).astype(int)
 
-st.write("Estatísticas descritivas da variável alvo (engajamento_total):")
-if "engajamento_total" in df.columns:
-    st.write(df["engajamento_total"].describe())
-else:
-    st.error("A coluna 'engajamento_total' não foi encontrada no CSV. Verifique o arquivo.")
+    if "ano" in df.columns:
+        df["year"] = df["ano"]
+    else:
+        df["year"] = df["data_post"].dt.year.fillna(2024).astype(int)
+
+    return df, source
+
+# ------------- MODEL TRAINING LAYER -----------
+def train_model(df):
+    # Expected feature columns
+    feature_cols = [
+        "tipo_post",
+        "hora_post",
+        "dia_semana",
+        "tam_legenda",
+        "hashtag_count",
+        "emoji_count",
+        "sentimento_legenda",
+        "month",
+        "year",
+    ]
+    target_col = "engajamento_total"
+
+    missing = [c for c in feature_cols + [target_col] if c not in df.columns]
+    if missing:
+        st.error(f"Missing columns in dataset: {missing}")
+        return None, None, None
+
+    X = pd.get_dummies(df[feature_cols], drop_first=False)
+    y = df[target_col]
+
+    model = DecisionTreeRegressor(max_depth=6, random_state=42)
+    model.fit(X, y)
+
+    return model, X, y
+
+
+# ------------------- UI -----------------------
+st.title("🔥 HypeQuest – Instagram Engagement Prediction")
+st.caption("Hackathon prototype using simulated data + a Machine Learning model.")
+
+# Sidebar – data source
+st.sidebar.header("📁 Input data")
+uploaded_file = st.sidebar.file_uploader(
+    "Upload posts data (CSV)", type=["csv"],
+    help="In the future this will be replaced by an API connection."
+)
+
+df, source = load_data(uploaded_file)
+st.sidebar.success(f"Data loaded from: {source}")
+
+# Train model
+st.subheader("🤖 Training prediction model (Decision Tree)")
+model, X, y = train_model(df)
+
+if model is None:
     st.stop()
 
+# ---------------- WHAT-IF SCENARIO (TOP) ----------------
 st.markdown("---")
+st.subheader("🔮 Plan a new post and see the predicted engagement")
 
-# ---------------- GRÁFICOS EXPLORATÓRIOS ----------------
-st.subheader("📊 Análises rápidas de engajamento")
+c1, c2, c3 = st.columns(3)
+
+with c1:
+    post_type = st.selectbox("Post type", ["imagem", "video", "reels", "carrossel"])
+    hour = st.slider("Posting hour", 0, 23, 12)
+    weekday = st.selectbox(
+        "Day of week",
+        ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+    )
+
+with c2:
+    caption_len = st.slider("Caption length (characters)", 0, 400, 120)
+    hashtag_ct = st.slider("Number of hashtags", 0, 15, 3)
+    emoji_ct = st.slider("Number of emojis", 0, 10, 2)
+
+with c3:
+    sentiment = st.selectbox(
+        "Caption sentiment", ["positivo", "neutro", "negativo"]
+    )
+    month = st.selectbox("Month", list(range(1, 13)))
+    year = st.selectbox("Year", [2023, 2024, 2025])
+
+new_post = pd.DataFrame(
+    [
+        {
+            "tipo_post": post_type,
+            "hora_post": hour,
+            "dia_semana": weekday,
+            "tam_legenda": caption_len,
+            "hashtag_count": hashtag_ct,
+            "emoji_count": emoji_ct,
+            "sentimento_legenda": sentiment,
+            "month": month,
+            "year": year,
+        }
+    ]
+)
+
+new_proc = pd.get_dummies(new_post)
+new_proc = new_proc.reindex(columns=X.columns, fill_value=0)
+
+pred = model.predict(new_proc)[0]
+
+st.success(
+    f"⭐ Predicted total engagement for this post: **{int(pred):,} interactions**"
+)
+
+st.caption(
+    "This is a demo model trained on simulated data – for production we would plug in live data via API."
+)
+
+# ---------------- DATA OVERVIEW & EXPLORATION --------------
+st.markdown("---")
+st.subheader("👀 Data overview")
+
+st.write("First rows of the dataset:")
+st.dataframe(df.head())
+
+st.write("Target variable statistics (`engajamento_total`):")
+st.write(df["engajamento_total"].describe())
+
+# ---------------- QUICK EDA CHARTS ----------------
+st.markdown("---")
+st.subheader("📊 Quick engagement analysis")
 
 col_g1, col_g2 = st.columns(2)
 
 with col_g1:
     if "tipo_post" in df.columns:
-        eng_tipo = df.groupby("tipo_post")["engajamento_total"].mean().sort_values(ascending=False)
+        eng_tipo = (
+            df.groupby("tipo_post")["engajamento_total"]
+            .mean()
+            .sort_values(ascending=False)
+        )
         fig1, ax1 = plt.subplots()
         ax1.bar(eng_tipo.index, eng_tipo.values)
-        ax1.set_title("Engajamento médio por tipo de post")
-        ax1.set_ylabel("Engajamento médio")
-        ax1.set_xlabel("Tipo de post")
+        ax1.set_title("Average engagement by post type")
+        ax1.set_ylabel("Average engagement")
+        ax1.set_xlabel("Post type")
         plt.xticks(rotation=15)
         st.pyplot(fig1)
     else:
-        st.warning("Coluna 'tipo_post' não encontrada para o gráfico.")
+        st.warning("Column 'tipo_post' not found for chart.")
 
 with col_g2:
     if "dia_semana" in df.columns:
-        eng_dia = df.groupby("dia_semana")["engajamento_total"].mean().sort_values(ascending=False)
+        eng_dia = (
+            df.groupby("dia_semana")["engajamento_total"]
+            .mean()
+            .sort_values(ascending=False)
+        )
         fig2, ax2 = plt.subplots()
         ax2.bar(eng_dia.index, eng_dia.values)
-        ax2.set_title("Engajamento médio por dia da semana")
-        ax2.set_ylabel("Engajamento médio")
-        ax2.set_xlabel("Dia da semana")
+        ax2.set_title("Average engagement by weekday")
+        ax2.set_ylabel("Average engagement")
+        ax2.set_xlabel("Day of week")
         plt.xticks(rotation=30)
         st.pyplot(fig2)
     else:
-        st.warning("Coluna 'dia_semana' não encontrada para o gráfico.")
+        st.warning("Column 'dia_semana' not found for chart.")
 
+# ---------------- FEATURE IMPORTANCE ----------------
 st.markdown("---")
+st.subheader("🌟 Feature importance")
 
-# ---------------- PREPARAR MODELO ----------------
-st.subheader("🤖 Treinando modelo de previsão (Árvore de Decisão)")
-
-features = ['tipo_post','hora_post','dia_semana','tam_legenda',
-            'hashtag_count','emoji_count','sentimento_legenda','mes','ano']
-target = 'engajamento_total'
-
-missing = [c for c in features if c not in df.columns]
-if missing:
-    st.error(f"As seguintes colunas esperadas não foram encontradas no CSV: {missing}")
-    st.stop()
-
-X = pd.get_dummies(df[features], drop_first=False)
-y = df[target]
-
-modelo = DecisionTreeRegressor(max_depth=6, random_state=42)
-modelo.fit(X, y)
-
-st.write("Modelo treinado com sucesso em cima do dataset atual.")
-st.write(f"Número de observações: {X.shape[0]} | Número de features após one-hot: {X.shape[1]}")
-
-# ---------------- IMPORTÂNCIA DAS VARIÁVEIS ----------------
-st.subheader("🌟 Importância das variáveis para o modelo")
-
-importances = modelo.feature_importances_
+importances = model.feature_importances_
 idx = np.argsort(importances)[-15:]
 
-fig_imp, ax_imp = plt.subplots(figsize=(8,4))
+fig_imp, ax_imp = plt.subplots(figsize=(8, 4))
 ax_imp.barh(X.columns[idx], importances[idx])
-ax_imp.set_title("Top 15 features mais importantes")
+ax_imp.set_title("Top 15 most important features for the model")
 plt.tight_layout()
 st.pyplot(fig_imp)
-
-st.markdown("---")
-
-# ---------------- SIMULAÇÃO (WHAT-IF) ----------------
-st.subheader("🔮 Simular um novo post e prever engajamento")
-
-c1, c2, c3 = st.columns(3)
-
-with c1:
-    tipo = st.selectbox("Tipo do post", ["imagem", "video", "reels", "carrossel"])
-    hora = st.slider("Hora do post", 0, 23, 12)
-    dia_sem = st.selectbox(
-        "Dia da semana",
-        ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
-    )
-
-with c2:
-    tam_leg = st.slider("Tamanho da legenda (caracteres)", 0, 400, 120)
-    hashtag_ct = st.slider("Quantidade de hashtags", 0, 15, 3)
-    emoji_ct = st.slider("Quantidade de emojis", 0, 10, 2)
-
-with c3:
-    sent = st.selectbox("Sentimento da legenda", ["positivo","neutro","negativo"])
-    mes = st.selectbox("Mês", list(range(1,13)))
-    ano = st.selectbox("Ano", [2023, 2024, 2025])
-
-novo = pd.DataFrame([{
-    "tipo_post": tipo,
-    "hora_post": hora,
-    "dia_semana": dia_sem,
-    "tam_legenda": tam_leg,
-    "hashtag_count": hashtag_ct,
-    "emoji_count": emoji_ct,
-    "sentimento_legenda": sent,
-    "mes": mes,
-    "ano": ano
-}])
-
-novo_proc = pd.get_dummies(novo)
-novo_proc = novo_proc.reindex(columns=X.columns, fill_value=0)
-
-pred = modelo.predict(novo_proc)[0]
-
-st.success(f"⭐ Previsão de engajamento total para esse post: **{int(pred):,}**")
-
-st.caption("Obs.: Modelo demonstrativo, treinado em dados simulados, apenas para fins de protótipo.")
