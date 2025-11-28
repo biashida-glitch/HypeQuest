@@ -1,6 +1,3 @@
-# Instala o Streamlit para garantir que esteja disponível no ambiente da app
-!pip install streamlit
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -20,15 +17,14 @@ st.sidebar.header("📁 Dados de entrada")
 
 uploaded_file = st.sidebar.file_uploader(
     "Envie o dataset de posts (CSV)", type=["csv"],
-    help="Se não enviar nada, o app usa o arquivo hypequest_dataset_ficticio.csv do Colab."
+    help="Se não enviar nada, o app usa o arquivo hypequest_dataset_ficticio.csv do repositório."
 )
 
 if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
     origem = "Arquivo enviado"
 else:
-    # ajuste o nome do arquivo se o seu CSV tiver outro nome/caminho
-    df = pd.read_csv("hypequest_dataset_ficticio.csv")
+    df = pd.read_csv("hypequest_dataset_ficticio.csv")  # arquivo que você subiu no repo
     origem = "Dataset fictício padrão (hypequest_dataset_ficticio.csv)"
 
 st.sidebar.success(f"Dados carregados de: {origem}")
@@ -51,7 +47,6 @@ st.subheader("📊 Análises rápidas de engajamento")
 
 col_g1, col_g2 = st.columns(2)
 
-# 1) Engajamento médio por tipo de post
 with col_g1:
     if "tipo_post" in df.columns:
         eng_tipo = df.groupby("tipo_post")["engajamento_total"].mean().sort_values(ascending=False)
@@ -65,7 +60,6 @@ with col_g1:
     else:
         st.warning("Coluna 'tipo_post' não encontrada para o gráfico.")
 
-# 2) Engajamento médio por dia da semana
 with col_g2:
     if "dia_semana" in df.columns:
         eng_dia = df.groupby("dia_semana")["engajamento_total"].mean().sort_values(ascending=False)
@@ -84,12 +78,10 @@ st.markdown("---")
 # ---------------- PREPARAR MODELO ----------------
 st.subheader("🤖 Treinando modelo de previsão (Árvore de Decisão)")
 
-# features usadas no seu notebook
 features = ['tipo_post','hora_post','dia_semana','tam_legenda',
             'hashtag_count','emoji_count','sentimento_legenda','mes','ano']
 target = 'engajamento_total'
 
-# verificar se todas existem
 missing = [c for c in features if c not in df.columns]
 if missing:
     st.error(f"As seguintes colunas esperadas não foram encontradas no CSV: {missing}")
@@ -108,7 +100,7 @@ st.write(f"Número de observações: {X.shape[0]} | Número de features após on
 st.subheader("🌟 Importância das variáveis para o modelo")
 
 importances = modelo.feature_importances_
-idx = np.argsort(importances)[-15:]  # top 15
+idx = np.argsort(importances)[-15:]
 
 fig_imp, ax_imp = plt.subplots(figsize=(8,4))
 ax_imp.barh(X.columns[idx], importances[idx])
@@ -153,7 +145,6 @@ novo = pd.DataFrame([{
     "ano": ano
 }])
 
-# aplicar mesmo processamento que X
 novo_proc = pd.get_dummies(novo)
 novo_proc = novo_proc.reindex(columns=X.columns, fill_value=0)
 
