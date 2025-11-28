@@ -11,6 +11,57 @@ st.set_page_config(
     layout="wide"
 )
 
+st.markdown(
+    """
+    <style>
+    /* Card base */
+    .hq-card {
+        padding: 0.9rem 1.1rem;
+        border-radius: 0.8rem;
+        border: 1px solid rgba(0,0,0,0.05);
+        margin-bottom: 0.5rem;
+        font-size: 0.95rem;
+    }
+    .hq-positive {
+        background-color: #ecfdf3;
+        border-color: #22c55e33;
+    }
+    .hq-neutral {
+        background-color: #eff6ff;
+        border-color: #3b82f633;
+    }
+    .hq-negative {
+        background-color: #fef2f2;
+        border-color: #ef444433;
+    }
+    .hq-pill {
+        display: inline-block;
+        padding: 0.25rem 0.7rem;
+        border-radius: 999px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        margin-right: 0.4rem;
+    }
+    .hq-pill-positive {
+        background-color: #22c55e1A;
+        color: #15803d;
+        border: 1px solid #22c55e55;
+    }
+    .hq-pill-neutral {
+        background-color: #3b82f61A;
+        color: #1d4ed8;
+        border: 1px solid #3b82f655;
+    }
+    .hq-pill-negative {
+        background-color: #ef44441A;
+        color: #b91c1c;
+        border: 1px solid #ef444455;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 st.title("🔥 HypeQuest – Instagram Engagement & Sentiment Prediction")
 st.caption(
     "Prototype that predicts post engagement and sentiment using Machine Learning. "
@@ -182,6 +233,7 @@ POSITIVE_KEYWORDS = [
     "update",
     "trailer",
 ]
+
 NEGATIVE_KEYWORDS = [
     "bug",
     "issue",
@@ -243,7 +295,7 @@ def analyze_caption(caption: str, context: dict):
             "You are outside the usual prime time (18–22). Check if your audience is active at this hour."
         )
 
-    # sentimento neutro
+    # sentimento neutro / negativo
     if sentiment == "NEUTRAL":
         suggestions.append(
             "Caption feels neutral. Try adding hype words, emojis or a stronger emotion."
@@ -309,7 +361,6 @@ if df_profile is None or df_profile.empty:
 else:
     model, feature_columns = train_profile_model(df_profile)
 
-# (Histórico não é exibido visualmente – fica só para o modelo e você pode citar no pitch)
 st.sidebar.info(data_source_label)
 
 # =========================================================
@@ -347,7 +398,7 @@ caption_text = st.text_area(
     "Caption text",
     value=st.session_state["caption_text"],
     height=120,
-    placeholder="Write the caption in English (recommended) – this will be analyzed for sentiment and keywords.",
+    placeholder="Write the caption in English – sentiment and suggestions will be based on this text.",
 )
 
 caption_length = len(caption_text)
@@ -405,60 +456,88 @@ if evaluate:
             )
 
         # ----------------------------------------------------
-        # RESULTADO COMPACTO – SENTIMENTO + ENGAJAMENTO
+        # RESULTADO VISUAL – SENTIMENTO + ENGAJAMENTO
         # ----------------------------------------------------
         st.markdown("---")
         st.subheader("🔍 Predicted sentiment and engagement")
 
         # Badge de sentimento
         if sentiment == "POSITIVE":
-            sentiment_color = "✅"
+            icon = "✅"
+            css_class = "hq-card hq-positive"
+            pill_class = "hq-pill hq-pill-positive"
         elif sentiment == "NEGATIVE":
-            sentiment_color = "⚠️"
+            icon = "⚠️"
+            css_class = "hq-card hq-negative"
+            pill_class = "hq-pill hq-pill-negative"
         else:
-            sentiment_color = "💬"
+            icon = "💬"
+            css_class = "hq-card hq-neutral"
+            pill_class = "hq-pill hq-pill-neutral"
 
         st.markdown(
-            f"**Predicted sentiment:** {sentiment_color} **{sentiment}**"
-        )
-
-        st.markdown(
-            f"**Predicted engagement:** ~ **{int(pred_engagement):,} interactions**  \n"
-            f"<span style='font-size: 0.85rem; color: #666;'>{engagement_note}</span>",
+            f"""
+            <div class="{css_class}">
+                <span class="{pill_class}">{icon} {sentiment}</span><br/>
+                <span>Overall tone for this caption based on keywords and context.</span>
+            </div>
+            """,
             unsafe_allow_html=True,
         )
 
-        # Palavras-chave (opcional, mas curto)
+        st.markdown(
+            f"""
+            <div class="hq-card hq-neutral">
+                <strong>Predicted engagement:</strong> ~ <strong>{int(pred_engagement):,} interactions</strong><br/>
+                <span style='font-size: 0.85rem; color: #555;'>{engagement_note}</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        # Palavras-chave em dois cards pequenos
         kw_col1, kw_col2 = st.columns(2)
         with kw_col1:
             st.caption("Matched positive keywords in caption:")
             if matched_pos:
-                st.write(", ".join(matched_pos))
+                st.markdown(
+                    f"<div class='hq-card hq-positive'>{', '.join(matched_pos)}</div>",
+                    unsafe_allow_html=True,
+                )
             else:
-                st.write("None detected.")
+                st.markdown(
+                    "<div class='hq-card hq-neutral'>No clearly positive keywords detected.</div>",
+                    unsafe_allow_html=True,
+                )
 
         with kw_col2:
             st.caption("Matched negative keywords in caption:")
             if matched_neg:
-                st.write(", ".join(matched_neg))
+                st.markdown(
+                    f"<div class='hq-card hq-negative'>{', '.join(matched_neg)}</div>",
+                    unsafe_allow_html=True,
+                )
             else:
-                st.write("None detected.")
+                st.markdown(
+                    "<div class='hq-card hq-neutral'>No negative keywords detected.</div>",
+                    unsafe_allow_html=True,
+                )
 
         # ----------------------------------------------------
         # SUGESTÕES DE MELHORIA
         # ----------------------------------------------------
         st.markdown("### 💡 Suggestions to improve this caption")
         for s in suggestions:
-            st.write(f"- {s}")
+            st.markdown(f"- {s}")
 
         # ----------------------------------------------------
-        # LEGENDA SUGERIDA + BOTÃO PARA APLICAR
+        # LEGENDA SUGERIDA + BOTÃO CHAMATIVO DE CÓPIA
         # ----------------------------------------------------
         st.markdown("### ✨ Suggested improved caption")
 
         st.info(
             "This suggestion is generated from your original caption. "
-            "You can apply it to the editor and then tweak it as you like."
+            "Click the button below to copy it into the editor above and tweak as you like."
         )
 
         st.text_area(
@@ -468,7 +547,7 @@ if evaluate:
             key="suggested_caption_view",
         )
 
-        apply_suggestion = st.button("📋 Use this suggested caption")
+        apply_suggestion = st.button("📋 Use this suggested caption", type="secondary")
         if apply_suggestion:
             st.session_state["caption_text"] = improved_caption
             st.success("Suggested caption applied to the editor above – you can now adjust or post it!")
@@ -478,3 +557,4 @@ if evaluate:
             "This prototype is history-driven: the logic learns from past posts of each profile. "
             "New profiles without historical data will only have baseline estimates until real data is ingested via API or upload."
         )
+
