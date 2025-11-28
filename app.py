@@ -3,526 +3,33 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.tree import DecisionTreeRegressor
-from datetime import datetime, timedelta
+from typing import List
+import re
+import time
 
 # =========================================================
-# CONFIG
+#  PAGE CONFIG
 # =========================================================
 st.set_page_config(
-    page_title="HypeQuest – Instagram Engagement Prediction",
-    layout="wide"
+    page_title="HypeQuest – Instagram Engagement & Sentiment",
+    layout="wide",
 )
 
-st.title("🔥 HypeQuest – Instagram Engagement Prediction")
-st.caption(
-    "Dashboard that uses historical Instagram-style data per profile to "
-    "predict post sentiment and engagement based on caption and posting context."
-)
-st.markdown("---")
-
 
 # =========================================================
-# 1. INTERNAL DATA GENERATION (PER PROFILE)
-#    (This mimics an internal API, but is NEVER shown in the UI)
+#  HELPER: NICE INFO CARDS
 # =========================================================
-
-POSITIVE_WORDS = [
-    "hype", "amazing", "awesome", "new", "exclusive",
-    "win", "victory", "gg", "update", "launch", "free",
-    "reward", "bonus", "buff", "fun", "drop", "event"
-]
-
-NEGATIVE_WORDS = [
-    "bug", "issue", "problem", "delay", "downtime",
-    "maintenance", "broken", "crash", "lag", "nerf"
-]
-
-
-def build_profile_history(profile_handle: str, n_rows: int = 160) -> pd.DataFrame:
+def info_card(title: str, body: str, tone: str = "neutral"):
     """
-    Creates an internal historical dataset for a specific Instagram profile.
-    One row per post.
-
-    Columns:
-      - date_post, post_type, post_hour, weekday
-      - caption_text, caption_length, hashtag_count
-      - topic, profile
-      - engagement_total
+    Small helper to render nice cards.
+    tone: 'neutral', 'positive', 'negative'
     """
-    rng = np.random.default_rng(hash(profile_handle) % (2**32))
-
-    base_date = datetime(2024, 1, 1)
-    post_types = ["image", "video", "reels", "carousel"]
-    weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-    topics = ["update", "maintenance", "trailer", "collaboration", "gameplay", "esports", "community"]
-
-    rows = []
-    for i in range(n_rows):
-        date = base_date + timedelta(days=int(rng.integers(0, 120)))
-        post_type = rng.choice(post_types)
-        topic = rng.choice(topics)
-        post_hour = int(rng.integers(8, 23))
-        weekday = weekdays[date.weekday()]
-        hashtag_count = int(rng.integers(0, 12))
-
-        # Base caption keywords: we want these to match what we'll detect later
-        caption_keywords = []
-
-        # Slightly different behavior per profile
-        if profile_handle == "@pubg":
-            if topic in ["update", "trailer", "esports"]:
-                caption_keywords += ["update", "hype", "event"]
-            elif topic == "maintenance":
-                caption_keywords += ["maintenance", "delay"]
-            else:
-                caption_keywords += ["gameplay", "fun"]
-        elif profile_handle == "@playinzoi":
-            if topic in ["collaboration", "update"]:
-                caption_keywords += ["amazing", "new", "exclusive"]
-            elif topic == "maintenance":
-                caption_keywords += ["maintenance", "issue"]
-            else:
-                caption_keywords += ["event", "fun"]
-        else:
-            caption_keywords += ["gameplay"]
-
-        # Add random positive / negative words
-        if rng.random() < 0.5:
-            caption_keywords.append(rng.choice(POSITIVE_WORDS))
-        if rng.random() < 0.3:
-            caption_keywords.append(rng.choice(NEGATIVE_WORDS))
-
-        base_caption = " ".join(dict.fromkeys(caption_keywords))  # unique, keep order
-
-        # Desired length and padding
-        target_len = int(rng.integers(80, 260))
-        filler = " gameplay" * 50
-        caption = (base_caption + filler)[:target_len]
-
-        caption_length = len(caption)
-
-        # Engagement rule: depends on type, weekday, topic, sentiment-ish
-        base_eng = 500
-
-        if post_type == "reels":
-            base_eng += 220
-        if weekday in ["Thursday", "Friday"]:
-            base_eng += 130
-        if topic in ["update", "trailer", "collaboration"]:
-            base_eng += 140
-        if "bug" in caption or "delay" in caption or "problem" in caption:
-            base_eng -= 180
-
-        base_eng += hashtag_count * 22
-        base_eng += rng.normal(0, 110)
-
-        engagement_total = max(50, int(base_eng))
-
-        rows.append(
-            dict(
-                date_post=date,
-                post_type=post_type,
-                post_hour=post_hour,
-                weekday=weekday,
-                caption_text=caption,
-                caption_length=caption_length,
-                hashtag_count=hashtag_count,
-                topic=topic,
-                profile=profile_handle,
-                engagement_total=engagement_total,
-            )
-        )
-
-    return pd.DataFrame(rows)
-
-
-# =========================================================
-# 2. SENTIMENT ESTIMATION (CAPTION + CONTEXT)
-# =========================================================
-
-def estimate_sentiment(
-    caption: str,
-    topic: str,
-    hour: int,
-    weekday: str,
-    caption_length: int,
-    hashtag_count: int,
-) -> tuple[str, list[str], list[str]]:
-    """
-    Rule-based sentiment estimation combining:
-      - caption text (keyword hits)
-      - context (topic, hour, weekday, caption length, hashtags)
-
-    Returns:
-      (sentiment_label, matched_positive_keywords, matched_negative_keywords)
-    """
-    if caption is None:
-        caption = ""
-    text = caption.lower()
-
-    score = 0.0
-
-    # 1) Keywords in caption
-    matched_pos = [w for w in POSITIVE_WORDS if w in text]
-    matched_neg = [w for w in NEGATIVE_WORDS if w in text]
-
-    score += len(matched_pos) * 2.0
-    score -= len(matched_neg) * 2.0
-
-    # 2) Topic bias
-    if topic in ["update", "trailer", "collaboration", "esports"]:
-        score += 1.0
-    if topic == "maintenance":
-        score -= 1.0
-
-    # 3) Time-of-day / weekday
-    if 18 <= hour <= 22:
-        score += 0.5  # prime time
-    if weekday in ["Saturday", "Sunday"]:
-        score += 0.5
-
-    # 4) Caption length / hashtag usage
-    if caption_length > 320:
-        score -= 0.7  # too long
-    if hashtag_count >= 8:
-        score += 0.5
-
-    if score >= 1.5:
-        label = "positive"
-    elif score <= -1.0:
-        label = "negative"
-        # neutral in the middle
-    else:
-        label = "neutral"
-
-    return label, matched_pos, matched_neg
-
-
-def generate_suggestions(
-    sentiment: str,
-    matched_pos: list[str],
-    matched_neg: list[str],
-    caption_length: int,
-    hashtag_count: int,
-    hour: int,
-    weekday: str,
-    topic: str,
-) -> list[str]:
-    """
-    Generate human-readable suggestions to improve the caption/post setup.
-    """
-    suggestions = []
-
-    # Sentiment-driven suggestions
-    if sentiment == "negative":
-        suggestions.append(
-            "The caption feels negative. Consider removing or rephrasing words like "
-            f"{', '.join(matched_neg)} and adding more hopeful or community-focused tone."
-            if matched_neg else
-            "The caption is skewed negative. Consider softening the tone or adding a more positive angle."
-        )
-    elif sentiment == "neutral":
-        suggestions.append(
-            "The caption looks neutral. You could add a stronger hook or emotional word "
-            "to make it more exciting (e.g., hype, amazing, new, exclusive)."
-        )
-
-    # Keywords balance
-    if not matched_pos:
-        suggestions.append(
-            "No positive keywords detected. Consider adding words like "
-            "hype, amazing, new, exclusive, event or reward."
-        )
-
-    if matched_neg:
-        suggestions.append(
-            "Negative keywords detected: "
-            + ", ".join(matched_neg)
-            + ". Make sure this is intentional (e.g., addressing issues transparently) "
-              "or reduce them if the goal is hype."
-        )
-
-    # Caption length
-    if caption_length > 320:
-        suggestions.append(
-            "The caption is quite long. Try shortening or using bullet-style structure "
-            "to keep it more scannable."
-        )
-    elif caption_length < 60:
-        suggestions.append(
-            "The caption is very short. Consider adding a bit more context or a clear call to action."
-        )
-
-    # Hashtags
-    if hashtag_count == 0:
-        suggestions.append(
-            "You are not using hashtags. Adding a few relevant hashtags can help reach new audiences."
-        )
-    elif hashtag_count > 12:
-        suggestions.append(
-            "You are using many hashtags. Consider focusing on the most relevant ones "
-            "to avoid looking like spam."
-        )
-
-    # Timing
-    if not (18 <= hour <= 22):
-        suggestions.append(
-            "Consider testing this post closer to prime time (18–22) if your audience is active then."
-        )
-    if weekday in ["Monday", "Tuesday"]:
-        suggestions.append(
-            "Early-week posts can work, but you might compare performance with Thursday/Friday "
-            "for hype / announcement content."
-        )
-
-    # Topic-specific
-    if topic == "maintenance" and sentiment == "positive":
-        suggestions.append(
-            "Maintenance posts are usually sensitive. Make sure the tone still sounds transparent "
-            "and respectful, not overly ‘marketing’."
-        )
-
-    # Fallback suggestion
-    if not suggestions:
-        suggestions.append("The setup looks solid. You can A/B test small variations in caption and timing.")
-
-    return suggestions
-
-
-# =========================================================
-# 3. TRAIN ENGAGEMENT MODEL PER PROFILE
-# =========================================================
-
-def prepare_training_data(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
-    """
-    Builds training features for engagement model, using
-    sentiment derived from caption + context.
-    """
-    df = df.copy()
-
-    df["sentiment"] = df.apply(
-        lambda row: estimate_sentiment(
-            caption=row["caption_text"],
-            topic=row["topic"],
-            hour=row["post_hour"],
-            weekday=row["weekday"],
-            caption_length=row["caption_length"],
-            hashtag_count=row["hashtag_count"],
-        )[0],
-        axis=1,
-    )
-
-    feature_cols = [
-        "post_type",
-        "post_hour",
-        "weekday",
-        "caption_length",
-        "hashtag_count",
-        "topic",
-        "profile",
-        "sentiment",
-    ]
-
-    X = pd.get_dummies(df[feature_cols], drop_first=False)
-    y = df["engagement_total"]
-
-    return X, y
-
-
-def train_engagement_model(X: pd.DataFrame, y: pd.Series) -> DecisionTreeRegressor:
-    model = DecisionTreeRegressor(max_depth=6, random_state=42)
-    model.fit(X, y)
-    return model
-
-
-# =========================================================
-# 4. SELECT PROFILE & LOAD ITS HISTORY (INTERNALLY)
-# =========================================================
-
-st.sidebar.header("Profile & data")
-
-profile_choice = st.sidebar.selectbox(
-    "Instagram profile",
-    ["@playinzoi", "@pubg", "Other"],
-)
-
-if profile_choice == "Other":
-    profile_handle = st.sidebar.text_input(
-        "Custom profile handle",
-        "@yourbrand",
-        help="For new profiles without history, only a simple estimate is available.",
-    )
-else:
-    profile_handle = profile_choice
-
-if profile_handle in ["@playinzoi", "@pubg"]:
-    df_history = build_profile_history(profile_handle)
-    X_train, y_train = prepare_training_data(df_history)
-    engagement_model = train_engagement_model(X_train, y_train)
-    st.sidebar.success(
-        f"Historical posts available for {profile_handle}: {len(df_history)}"
-    )
-    model_available = True
-else:
-    df_history = None
-    X_train, y_train = None, None
-    engagement_model = None
-    st.sidebar.warning(
-        "No historical data available for this profile yet. "
-        "Predictions will use a simple baseline only."
-    )
-    model_available = False
-
-
-# =========================================================
-# 5. WHAT-IF SIMULATOR (USER INPUT)
-# =========================================================
-
-st.subheader("🎛 Plan a new Instagram post")
-
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    post_type = st.selectbox("Post type", ["image", "video", "reels", "carousel"])
-    post_hour = st.slider("Posting hour", 0, 23, 18)
-    weekday = st.selectbox(
-        "Weekday",
-        ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
-    )
-
-with col2:
-    hashtag_count = st.slider("Number of hashtags", 0, 20, 5)
-
-with col3:
-    topic = st.selectbox(
-        "Post topic",
-        [
-            "update", "maintenance", "trailer", "collaboration",
-            "gameplay", "esports", "community"
-        ],
-    )
-
-st.markdown("#### ✏️ Caption")
-
-caption_text = st.text_area(
-    "Caption text",
-    "",
-    height=140,
-    placeholder="Type your Instagram caption here...",
-)
-caption_length = len(caption_text)
-
-st.markdown(
-    f"<span style='color:#64748b;'>Caption length: "
-    f"<b>{caption_length}</b> characters "
-    f"(used as a feature in the model).</span>",
-    unsafe_allow_html=True,
-)
-
-evaluate_clicked = st.button("✨ Evaluate caption & get suggestions")
-
-
-# =========================================================
-# 6. SENTIMENT ESTIMATION + VISUALIZATION + SUGGESTIONS
-# =========================================================
-
-st.markdown("---")
-st.markdown("### 🔍 Predicted sentiment and engagement")
-
-if evaluate_clicked:
-    predicted_sentiment, matched_pos, matched_neg = estimate_sentiment(
-        caption=caption_text,
-        topic=topic,
-        hour=post_hour,
-        weekday=weekday,
-        caption_length=caption_length,
-        hashtag_count=hashtag_count,
-    )
-
-    # Sentiment badge
-    sent_color_map = {
-        "positive": "#22c55e",
-        "neutral": "#eab308",
-        "negative": "#ef4444",
+    colors = {
+        "neutral": {"bg": "#f9fafb", "border": "#e5e7eb", "title": "#111827"},
+        "positive": {"bg": "#ecfdf5", "border": "#6ee7b7", "title": "#065f46"},
+        "negative": {"bg": "#fef2f2", "border": "#fecaca", "title": "#991b1b"},
     }
-    sent_color = sent_color_map.get(predicted_sentiment, "#6b7280")
-
-    sentiment_badge = f"""
-    <div style="margin-top:0.5rem;margin-bottom:0.75rem;">
-      <span style="
-        background-color:{sent_color};
-        color:white;
-        padding:0.35rem 0.9rem;
-        border-radius:999px;
-        font-weight:600;
-        font-size:16px;">
-        {predicted_sentiment.upper()}
-      </span>
-    </div>
-    """
-
-    st.markdown(
-        "**Predicted sentiment for this post "
-        "(based on caption keywords and posting context):**",
-        unsafe_allow_html=True,
-    )
-    st.markdown(sentiment_badge, unsafe_allow_html=True)
-
-    # Show matched keywords so it’s clear the caption is being used
-    kw_cols = st.columns(2)
-    with kw_cols[0]:
-        st.markdown("**Matched positive keywords in caption:**")
-        if matched_pos:
-            st.markdown(
-                " ".join(
-                    f"<span style='background-color:#dcfce7;"
-                    f"color:#166534;padding:0.1rem 0.5rem;margin:0.1rem;"
-                    f"border-radius:999px;font-size:12px;'>{w}</span>"
-                    for w in matched_pos
-                ),
-                unsafe_allow_html=True,
-            )
-        else:
-            st.markdown(
-                "<span style='color:#94a3b8;font-size:13px;'>No positive keywords detected.</span>",
-                unsafe_allow_html=True,
-            )
-
-    with kw_cols[1]:
-        st.markdown("**Matched negative keywords in caption:**")
-        if matched_neg:
-            st.markdown(
-                " ".join(
-                    f"<span style='background-color:#fee2e2;"
-                    f"color:#991b1b;padding:0.1rem 0.5rem;margin:0.1rem;"
-                    f"border-radius:999px;font-size:12px;'>{w}</span>"
-                    for w in matched_neg
-                ),
-                unsafe_allow_html=True,
-            )
-        else:
-            st.markdown(
-                "<span style='color:#94a3b8;font-size:13px;'>No negative keywords detected.</span>",
-                unsafe_allow_html=True,
-            )
-
-    # Suggestions block
-    suggestions = generate_suggestions(
-        sentiment=predicted_sentiment,
-        matched_pos=matched_pos,
-        matched_neg=matched_neg,
-        caption_length=caption_length,
-        hashtag_count=hashtag_count,
-        hour=post_hour,
-        weekday=weekday,
-        topic=topic,
-    )
-
-    st.markdown("#### 💡 Suggestions to improve this caption")
-    suggestion_html = "<ul>"
-    for s in suggestions:
-        suggestion_html += f"<li style='margin-bottom:0.3rem;'>{s}</li>"
-    suggestion_html += "</ul>"
+    c = colors.get(tone, colors["neutral"])
 
     st.markdown(
         f"""
@@ -530,119 +37,674 @@ if evaluate_clicked:
             margin-top:0.5rem;
             padding:0.85rem 1rem;
             border-radius:0.75rem;
-            background-color:#f8fafc;
-            border:1px solid #e2e8f0;
-            font-size:14px;
-            color:#0f172a;
+            background-color:{c['bg']};
+            border:1px solid {c['border']};
         ">
-            {suggestion_html}
+            <div style="font-weight:600;color:{c['title']};margin-bottom:0.15rem;">
+                {title}
+            </div>
+            <div style="font-size:14px;color:#374151;line-height:1.5;">
+                {body}
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    # =====================================================
-    # 7. ENGAGEMENT PREDICTION (MODEL OR BASELINE)
-    # =====================================================
-    if model_available and X_train is not None:
-        new_post = pd.DataFrame(
-            [{
-                "post_type": post_type,
-                "post_hour": post_hour,
-                "weekday": weekday,
-                "caption_length": caption_length,
-                "hashtag_count": hashtag_count,
-                "topic": topic,
-                "profile": profile_handle,
-                "sentiment": predicted_sentiment,
-            }]
-        )
 
-        new_post_dummies = pd.get_dummies(new_post).reindex(
-            columns=X_train.columns, fill_value=0
-        )
-        pred_engagement = engagement_model.predict(new_post_dummies)[0]
+# =========================================================
+#  FAKE "API" PER PROFILE (EASY TO SWAP FOR REAL API LATER)
+# =========================================================
+def load_history_for_profile(profile_handle: str) -> pd.DataFrame | None:
+    """
+    Simulates an API returning historical posts for a given profile.
+    In production, this function would call the real API and
+    return a DataFrame with the same columns.
+    """
+    # Expected columns (Portuguese names kept to match your TCC)
+    cols = [
+        "data_post",
+        "tipo_post",
+        "hora_post",
+        "dia_semana",
+        "tam_legenda",
+        "hashtag_count",
+        "emoji_count",
+        "sentimento_legenda",
+        "engajamento_total",
+    ]
 
-        st.markdown(
-            f"""
-            <div style="
-                margin-top:0.75rem;
-                padding:0.9rem 1rem;
-                border-radius:0.75rem;
-                background-color:#dbeafe;
-                border:1px solid #bfdbfe;
-            ">
-                <span style="font-size:14px;color:#1d4ed8;">
-                    Predicted engagement for <b>{profile_handle}</b>
-                </span><br/>
-                <span style="font-size:22px;font-weight:700;color:#1e3a8a;">
-                    {int(pred_engagement):,} interactions
-                </span>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+    # Small fake datasets per profile
+    if profile_handle == "@pubg":
+        data = [
+            ["2024-02-01", "video", 20, "Thursday", 320, 5, 3, "positivo", 2800],
+            ["2024-02-05", "reels", 19, "Monday", 180, 4, 2, "positivo", 2600],
+            ["2024-02-10", "image", 14, "Saturday", 140, 3, 1, "neutro", 1900],
+            ["2024-02-15", "video", 21, "Thursday", 400, 6, 4, "positivo", 3100],
+            ["2024-02-20", "reels", 18, "Tuesday", 210, 5, 3, "positivo", 2950],
+        ]
+    elif profile_handle == "@playinzoi":
+        data = [
+            ["2024-02-02", "image", 18, "Friday", 260, 4, 2, "positivo", 1900],
+            ["2024-02-07", "video", 21, "Wednesday", 380, 6, 3, "positivo", 2300],
+            ["2024-02-12", "reels", 17, "Monday", 200, 5, 2, "neutro", 1700],
+            ["2024-02-18", "image", 20, "Sunday", 300, 4, 3, "positivo", 2100],
+        ]
     else:
-        # Sem histórico (perfil novo) → baseline simples
-        baseline = (caption_length + hashtag_count * 40 + post_hour * 5) / 10
-        st.markdown(
-            f"""
-            <div style="
-                margin-top:0.75rem;
-                padding:0.9rem 1rem;
-                border-radius:0.75rem;
-                background-color:#f1f5f9;
-                border:1px solid #e2e8f0;
-            ">
-                <span style="font-size:14px;color:#475569;">
-                    Estimated engagement for <b>{profile_handle}</b> (baseline only)
-                </span><br/>
-                <span style="font-size:22px;font-weight:700;color:#0f172a;">
-                    {int(baseline)} interactions
-                </span>
-            </div>
-            """,
-            unsafe_allow_html=True,
+        # No fake API for other profiles → return None
+        return None
+
+    df = pd.DataFrame(data, columns=cols)
+    return df
+
+
+# =========================================================
+#  FILE LOADER (CSV / EXCEL / JSON / PARQUET)
+# =========================================================
+def load_file(uploaded):
+    """Load multiple file types."""
+    if uploaded is None:
+        return None
+
+    filename = uploaded.name.lower()
+
+    try:
+        if filename.endswith(".csv"):
+            return pd.read_csv(uploaded)
+        elif filename.endswith(".xlsx") or filename.endswith(".xls"):
+            return pd.read_excel(uploaded)
+        elif filename.endswith(".json"):
+            return pd.read_json(uploaded)
+        elif filename.endswith(".parquet"):
+            return pd.read_parquet(uploaded)
+        else:
+            st.error("Unsupported file type. Upload CSV, Excel, JSON, or Parquet.")
+            return None
+    except Exception as e:
+        st.error(f"Error reading file: {e}")
+        return None
+
+
+# =========================================================
+#  DATA NORMALIZATION (HISTORICAL DATA)
+# =========================================================
+def prepare_dataframe(df: pd.DataFrame):
+    expected = [
+        "data_post",
+        "tipo_post",
+        "hora_post",
+        "dia_semana",
+        "tam_legenda",
+        "hashtag_count",
+        "emoji_count",
+        "sentimento_legenda",
+        "engajamento_total",
+    ]
+
+    missing = [c for c in expected if c not in df.columns]
+    if missing:
+        st.warning(
+            "Dataset is missing required columns: "
+            + ", ".join(missing)
+            + ". Using baseline instead of ML model."
+        )
+        return None, None, None
+
+    df = df.copy()
+    df["data_post"] = pd.to_datetime(df["data_post"], errors="coerce")
+
+    df["month"] = df["data_post"].dt.month.fillna(1).astype(int)
+    df["year"] = df["data_post"].dt.year.fillna(2024).astype(int)
+
+    feature_cols = [
+        "tipo_post",
+        "hora_post",
+        "dia_semana",
+        "tam_legenda",
+        "hashtag_count",
+        "emoji_count",
+        "sentimento_legenda",
+        "month",
+        "year",
+    ]
+
+    X = pd.get_dummies(df[feature_cols], drop_first=False)
+    y = df["engajamento_total"]
+
+    return df, X, y
+
+
+def train_model(X, y):
+    model = DecisionTreeRegressor(max_depth=6, random_state=42)
+    model.fit(X, y)
+    return model
+
+
+# =========================================================
+#  SIMPLE SENTIMENT ENGINE (KEYWORD-BASED)
+# =========================================================
+POSITIVE_KEYWORDS = [
+    "new",
+    "update",
+    "collab",
+    "collaboration",
+    "event",
+    "win",
+    "victory",
+    "legendary",
+    "exclusive",
+    "drop",
+    "season",
+    "launch",
+    "free",
+    "reward",
+    "rewarded",
+    "celebrate",
+    "best",
+    "amazing",
+    "exciting",
+    "fun",
+    "hype",
+    "gg",
+    "buff",
+]
+
+NEGATIVE_KEYWORDS = [
+    "bug",
+    "issue",
+    "problem",
+    "lag",
+    "crash",
+    "nerf",
+    "toxic",
+    "hate",
+    "boring",
+    "broken",
+    "unfair",
+    "angry",
+    "frustrated",
+    "delay",
+    "late",
+]
+
+
+def predict_sentiment_from_text(text: str):
+    """
+    Returns:
+        sentiment_label: 'positive' | 'neutral' | 'negative'
+        matched_pos: list of positive keywords found
+        matched_neg: list of negative keywords found
+    """
+    if not text or not text.strip():
+        return "neutral", [], []
+
+    lower = text.lower()
+    matched_pos = [w for w in POSITIVE_KEYWORDS if w in lower]
+    matched_neg = [w for w in NEGATIVE_KEYWORDS if w in lower]
+
+    score = len(matched_pos) - len(matched_neg)
+
+    # add small signal based on exclamation marks and emojis
+    exclam = lower.count("!")
+    if exclam >= 2:
+        score += 1
+
+    if score > 0:
+        label = "positive"
+    elif score < 0:
+        label = "negative"
+    else:
+        label = "neutral"
+
+    return label, matched_pos, matched_neg
+
+
+# =========================================================
+#  CAPTION IMPROVEMENT – BASED ON ORIGINAL TEXT
+# =========================================================
+def generate_new_caption(
+    original_caption: str,
+    sentiment: str,
+    matched_pos: List[str],
+    matched_neg: List[str],
+    profile_handle: str,
+) -> str:
+    """
+    Gera uma legenda melhorada a partir da legenda original,
+    reaproveitando o conteúdo, reforçando o tom positivo e
+    adicionando CTA, evitando palavras negativas.
+    """
+
+    text = original_caption.strip()
+
+    if not text:
+        # fallback se a pessoa não escreveu nada
+        if profile_handle == "@pubg":
+            return "New drop is coming. Jump in, squad up and share your best plays with us! 🔥"
+        elif profile_handle == "@playinzoi":
+            return "New creation incoming. Build, customize and show us your world! ✨"
+        else:
+            return "Something new is coming. Tell us what you think in the comments! 💬"
+
+    # 1) Limpar espaços extras
+    text = re.sub(r"\s+", " ", text)
+
+    # 2) Remover palavras claramente negativas, se tiver alguma match
+    for w in matched_neg:
+        pattern = re.compile(r"\b" + re.escape(w) + r"\b", flags=re.IGNORECASE)
+        text = pattern.sub("", text)
+    text = re.sub(r"\s+", " ", text).strip()
+
+    # 3) Garantir que tem algum "hook" positivo
+    if matched_pos:
+        pos_word = matched_pos[0]
+    else:
+        pos_word = "exciting"
+
+    # 4) Normalizar primeira letra (deixar com cara de frase bem escrita)
+    if text and not text[0].isupper():
+        text = text[0].upper() + text[1:]
+
+    # 5) Adicionar algum emoji leve se não tiver nenhum
+    if not re.search(r"[🔥✨🎮🚀💥💛⭐️🎥🏆]", text):
+        if profile_handle == "@pubg":
+            text += " 🔥"
+        elif profile_handle == "@playinzoi":
+            text += " ✨"
+        else:
+            text += " ⭐️"
+
+    # 6) Adicionar CTA baseado no perfil
+    if profile_handle == "@pubg":
+        cta = "Drop into the comments and tell us what you think!"
+    elif profile_handle == "@playinzoi":
+        cta = "Show us what you would create and share your ideas below!"
+    else:
+        cta = "Tell us what you think and share your thoughts below!"
+
+    # 7) Montar a legenda final
+    new_caption = f"{text} This is going to be {pos_word}! {cta}"
+    new_caption = " ".join(new_caption.split())
+
+    return new_caption
+
+
+# =========================================================
+#  HEADER
+# =========================================================
+st.title("🔥 HypeQuest – Instagram Engagement & Sentiment Prediction")
+st.caption(
+    "Prototype that predicts post engagement and sentiment using Machine Learning. "
+    "Works with CSV, Excel, JSON, Parquet, or manual input, and learns from historical posts."
+)
+st.markdown("---")
+
+
+# =========================================================
+#  SIDEBAR – PROFILE, DATASET, DATA SOURCE
+# =========================================================
+st.sidebar.header("Profile & data")
+
+profile_handle = st.sidebar.selectbox(
+    "Instagram profile",
+    ["@pubg", "@playinzoi", "@other"],
+)
+
+# Upload manual dataset
+st.sidebar.subheader("Load post dataset (optional)")
+uploaded = st.sidebar.file_uploader(
+    "Upload CSV / Excel / JSON / Parquet",
+    type=["csv", "xlsx", "xls", "json", "parquet"],
+)
+
+df_uploaded = load_file(uploaded)
+
+# Fake API data
+df_api = load_history_for_profile(profile_handle)
+
+# Decide which data source is used for the model
+if df_uploaded is not None:
+    df_history = df_uploaded.copy()
+    data_source = "Uploaded dataset"
+elif df_api is not None:
+    df_history = df_api.copy()
+    data_source = "Profile API (simulated)"
+else:
+    df_history = None
+    data_source = "No historical data"
+
+st.sidebar.markdown("**Data source used:** " + data_source)
+
+if df_history is not None:
+    st.sidebar.success(f"Historical posts available: {len(df_history)}")
+else:
+    st.sidebar.info("No historical posts available for this profile.")
+
+# Prepare data & model
+if df_history is not None:
+    df_prepared, X, y = prepare_dataframe(df_history)
+    if X is not None:
+        model = train_model(X, y)
+    else:
+        model = None
+else:
+    df_prepared = None
+    X = None
+    model = None
+
+
+# =========================================================
+#  MAIN: WHAT-IF SIMULATOR
+# =========================================================
+st.subheader("🧩 Plan a new Instagram post")
+
+col_left, col_right = st.columns(2)
+
+with col_left:
+    post_type = st.selectbox("Post type", ["image", "video", "reels", "carousel"])
+    posting_hour = st.slider("Posting hour", 0, 23, 20)
+    weekday = st.selectbox(
+        "Weekday",
+        ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+    )
+    num_hashtags = st.slider("Number of hashtags", 0, 20, 3)
+
+with col_right:
+    # Game/IP removed, using only profile handle as context
+    post_topic = st.selectbox(
+        "Post topic",
+        ["update", "trailer", "collaboration", "gameplay", "community", "other"],
+    )
+    month = st.selectbox("Month", list(range(1, 13)))
+    # Year not exposed as input anymore; fixed as 2025 for context
+    year = 2025
+    st.text_input("Year (used internally for trends)", value=str(year), disabled=True)
+
+st.markdown("### ✍️ Caption")
+
+caption_text = st.text_area(
+    "Caption text",
+    placeholder="Write your caption here...",
+    height=150,
+)
+
+caption_length = len(caption_text.strip())
+st.caption(f"Caption length: {caption_length} characters (used as a feature in the model).")
+
+evaluate_button = st.button("✨ Evaluate caption & get suggestions")
+
+
+# =========================================================
+#  EVALUATION LOGIC
+# =========================================================
+if evaluate_button:
+
+    if not caption_text.strip():
+        st.warning("Please write a caption before evaluating.")
+    else:
+        # nice little "thinking" animation
+        with st.spinner("HypeQuest is thinking about this post…"):
+            time.sleep(0.7)
+
+            # 1) Sentiment from caption
+            predicted_sentiment, matched_pos, matched_neg = predict_sentiment_from_text(
+                caption_text
+            )
+
+            # 2) Build feature row for engagement prediction
+            #    (even if we only have baseline)
+            new_row = pd.DataFrame(
+                [
+                    {
+                        "tipo_post": post_type,
+                        "hora_post": posting_hour,
+                        "dia_semana": weekday,
+                        "tam_legenda": caption_length,
+                        "hashtag_count": num_hashtags,
+                        "emoji_count": 0,  # could be improved by counting emojis later
+                        "sentimento_legenda": predicted_sentiment,
+                        "month": month,
+                        "year": year,
+                    }
+                ]
+            )
+
+            if X is not None and model is not None:
+                new_X = pd.get_dummies(new_row).reindex(columns=X.columns, fill_value=0)
+                predicted_engagement = float(model.predict(new_X)[0])
+                model_used = True
+            else:
+                # Baseline estimation if no ML model
+                baseline = (
+                    caption_length * 0.8
+                    + num_hashtags * 50
+                    + (5 if predicted_sentiment == "positive" else 0)
+                )
+                predicted_engagement = baseline
+                model_used = False
+
+            # 3) Suggestions & improved caption
+            suggestions: List[str] = []
+
+            if caption_length < 80:
+                suggestions.append(
+                    "Caption is very short. Consider adding a bit more context or a clearer call to action."
+                )
+            elif caption_length > 400:
+                suggestions.append(
+                    "Caption is quite long. Check if you can simplify it to keep players engaged."
+                )
+
+            if num_hashtags == 0:
+                suggestions.append(
+                    "No hashtags used. Consider adding 2–5 relevant hashtags to increase discoverability."
+                )
+            elif num_hashtags > 10:
+                suggestions.append(
+                    "You are using many hashtags. Make sure they are truly relevant to the content."
+                )
+
+            if predicted_sentiment == "negative":
+                suggestions.append(
+                    "Caption sentiment looks negative. Check wording to avoid frustration or toxic tone."
+                )
+            elif predicted_sentiment == "neutral":
+                suggestions.append(
+                    "Caption sentiment is neutral. You might add more hype or positive language to excite players."
+                )
+
+            # Simple prime-time suggestion
+            if posting_hour < 10 or posting_hour > 22:
+                suggestions.append(
+                    "Consider testing this post closer to your prime time (e.g., 18–22h) if your audience is active then."
+                )
+
+            new_caption = generate_new_caption(
+                original_caption=caption_text,
+                sentiment=predicted_sentiment,
+                matched_pos=matched_pos,
+                matched_neg=matched_neg,
+                profile_handle=profile_handle,
+            )
+
+        # =====================================================
+        #  RESULTS DISPLAY
+        # =====================================================
+        st.markdown("### 🔍 Predicted sentiment and engagement")
+
+        # Sentiment card
+        if predicted_sentiment == "positive":
+            info_card(
+                "Predicted sentiment",
+                "POSITIVE – players are likely to feel hyped or excited about this copy.",
+                tone="positive",
+            )
+        elif predicted_sentiment == "negative":
+            info_card(
+                "Predicted sentiment",
+                "NEGATIVE – wording may trigger frustration or negative reactions.",
+                tone="negative",
+            )
+        else:
+            info_card(
+                "Predicted sentiment",
+                "NEUTRAL – mostly informative; you can add more hype or emotion if desired.",
+                tone="neutral",
+            )
+
+        # Keywords
+        col_pos, col_neg = st.columns(2)
+        with col_pos:
+            if matched_pos:
+                info_card(
+                    "Matched positive keywords in caption",
+                    ", ".join(sorted(set(matched_pos))),
+                    tone="positive",
+                )
+            else:
+                info_card(
+                    "Matched positive keywords in caption",
+                    "No clearly positive keywords detected.",
+                    tone="neutral",
+                )
+        with col_neg:
+            if matched_neg:
+                info_card(
+                    "Matched negative keywords in caption",
+                    ", ".join(sorted(set(matched_neg))),
+                    tone="negative",
+                )
+            else:
+                info_card(
+                    "Matched negative keywords in caption",
+                    "No negative keywords detected.",
+                    tone="positive",
+                )
+
+        # Engagement prediction
+        tone = "positive" if model_used else "neutral"
+        model_text = "ML model (Decision Tree) using historical posts." if model_used else "baseline estimation (no historical data loaded)."
+        info_card(
+            "Predicted engagement",
+            f"Estimated engagement: **{int(predicted_engagement):,} interactions**. "
+            f"This value comes from the {model_text}",
+            tone=tone,
         )
 
-    st.caption(
-        "Sentiment is estimated using caption keywords and posting context. "
-        "Engagement prediction is trained on historical posts per profile "
-        "(when history exists); new profiles fall back to a simple baseline."
-    )
+        # Suggestions list
+        st.markdown("### 💡 Suggestions to improve this caption")
+        if suggestions:
+            for s in suggestions:
+                info_card("Suggestion", s, tone="neutral")
+        else:
+            info_card(
+                "Suggestion",
+                "This caption already looks solid based on our current rules.",
+                tone="positive",
+            )
 
-else:
-    st.markdown(
-        "<span style='color:#94a3b8;'>Click the button above to evaluate the caption and see sentiment, suggestions and predicted engagement.</span>",
-        unsafe_allow_html=True,
-    )
+        # Suggested caption
+        st.markdown("### ✨ Suggested improved caption")
+        info_card(
+            "New version (you can copy & paste)",
+            new_caption,
+            tone="positive",
+        )
+
+        # ORIGINAL vs SUGGESTED COMPARISON
+        st.markdown("### 📊 Original vs. suggested caption")
+
+        orig_len = len(caption_text.strip())
+        new_len = len(new_caption.strip())
+
+        orig_words = len(caption_text.split())
+        new_words = len(new_caption.split())
+
+        cta_terms = [
+            "tell us",
+            "share",
+            "show us",
+            "drop in",
+            "comment",
+            "join",
+            "watch",
+            "check out",
+        ]
+
+        def has_cta(text: str) -> bool:
+            lower = text.lower()
+            return any(t in lower for t in cta_terms)
+
+        orig_has_cta = has_cta(caption_text)
+        new_has_cta = has_cta(new_caption)
+
+        col_o, col_n = st.columns(2)
+
+        with col_o:
+            st.markdown("**Original caption**")
+            info_card(
+                "Text",
+                caption_text if caption_text.strip() else "<i>No caption provided.</i>",
+                tone="neutral",
+            )
+            info_card(
+                "Length",
+                f"{orig_len} characters – {orig_words} words",
+                tone="neutral",
+            )
+            info_card(
+                "Call to action",
+                "✅ Contains a CTA" if orig_has_cta else "⚠️ No clear CTA detected",
+                tone="positive" if orig_has_cta else "negative",
+            )
+
+        with col_n:
+            st.markdown("**Suggested caption**")
+            info_card(
+                "Text",
+                new_caption,
+                tone="positive" if predicted_sentiment == "positive" else "neutral",
+            )
+            info_card(
+                "Length",
+                f"{new_len} characters – {new_words} words",
+                tone="neutral",
+            )
+            info_card(
+                "Call to action",
+                "✅ Contains a CTA" if new_has_cta else "⚠️ No clear CTA detected",
+                tone="positive" if new_has_cta else "negative",
+            )
 
 
 # =========================================================
-# 8. OPTIONAL: INTERNAL HISTORY VIEW (ONLY IF PROFILE HAS DATA)
+#  OPTIONAL: DATA EXPLORATION (IF HISTORY EXISTS)
 # =========================================================
+if df_prepared is not None:
+    st.markdown("---")
+    st.subheader("👀 Historical data overview")
+    st.dataframe(df_prepared.head())
 
-if 'df_history' in locals() and df_history is not None:
-    with st.expander(f"📊 Historical posts used for {profile_handle} (internal view)"):
-        st.write("Sample of historical posts:")
-        st.dataframe(df_history.head())
+    st.write("Target distribution (engajamento_total):")
+    st.write(df_prepared["engajamento_total"].describe())
 
-        st.write("Engagement distribution:")
-        st.write(df_history["engagement_total"].describe())
+    st.markdown("### 📊 Engagement patterns")
+    cg1, cg2 = st.columns(2)
 
-        colA, colB = st.columns(2)
-        with colA:
-            eng_type = df_history.groupby("post_type")["engagement_total"].mean()
+    with cg1:
+        if "tipo_post" in df_prepared.columns:
+            eng = df_prepared.groupby("tipo_post")["engajamento_total"].mean()
             fig, ax = plt.subplots()
-            ax.bar(eng_type.index, eng_type.values)
+            ax.bar(eng.index, eng.values)
             ax.set_title("Average engagement by post type")
             plt.xticks(rotation=15)
             st.pyplot(fig)
 
-        with colB:
-            eng_wday = df_history.groupby("weekday")["engagement_total"].mean()
+    with cg2:
+        if "dia_semana" in df_prepared.columns:
+            eng = df_prepared.groupby("dia_semana")["engajamento_total"].mean()
             fig, ax = plt.subplots()
-            ax.bar(eng_wday.index, eng_wday.values)
+            ax.bar(eng.index, eng.values)
             ax.set_title("Average engagement by weekday")
             plt.xticks(rotation=15)
             st.pyplot(fig)
