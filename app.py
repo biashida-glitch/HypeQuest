@@ -1,3 +1,4 @@
+st.sidebar.write("DEBUG KEY:", os.getenv("OPENAI_API_KEY")[:5] + "*****")
 import os
 from datetime import datetime
 
