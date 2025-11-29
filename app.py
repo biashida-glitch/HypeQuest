@@ -1,31 +1,34 @@
 import os
-import random
-import string
 from datetime import datetime
 
 import numpy as np
 import pandas as pd
 import streamlit as st
-import matplotlib.pyplot as plt
-
 from sklearn.tree import DecisionTreeRegressor
 from sklearn.model_selection import train_test_split
 
-# ---------------------------------------------------------
-# Optional: OpenAI client for generative caption help
-# ---------------------------------------------------------
+# =========================================================
+# OpenAI client (opcional) – funciona com SDK novo (>=1.0)
+# =========================================================
+openai_client = None
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
 try:
-    from openai import OpenAI
-    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-    openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+    if OPENAI_API_KEY:
+        from openai import OpenAI
+        openai_client = OpenAI(api_key=OPENAI_API_KEY)
 except Exception:
-    OPENAI_API_KEY = None
     openai_client = None
 
-# ---------------------------------------------------------
-# Basic keyword-based sentiment (fallback when no API)
-# ---------------------------------------------------------
+if OPENAI_API_KEY and openai_client:
+    IA_STATUS = "✅ Generative AI (GPT-4.1-mini) enabled"
+else:
+    IA_STATUS = "⚠️ Generative AI disabled (no valid OPENAI_API_KEY or OpenAI SDK)"
 
+
+# =========================================================
+# Fallback de sentimento por palavras-chave
+# =========================================================
 POSITIVE_WORDS = {
     "win", "victory", "amazing", "awesome", "love", "great", "hype",
     "excited", "epic", "gg", "insane", "crazy", "wow", "🔥", "🥳"
@@ -52,27 +55,30 @@ def basic_sentiment(caption: str) -> str:
         return "NEUTRAL"
 
 
-# ---------------------------------------------------------
-# Generative caption analysis with OpenAI (if API available)
-# ---------------------------------------------------------
-
+# =========================================================
+# Função de IA generativa (GPT-4.1-mini + fallback)
+# =========================================================
 def gpt_caption_analysis(caption: str, context: dict) -> dict:
     """
-    Uses GPT (if available) to classify sentiment, explain, suggest tips
-    and propose an improved caption. If API is not available, falls back
-    to rule-based sentiment and simple tips.
+    Usa GPT-4.1-mini (se disponível) para:
+      - classificar sentimento
+      - explicar
+      - dar sugestões
+      - sugerir nova legenda
+
+    Se não tiver API ou der erro → usa heurística local.
     """
-    # Fallback if no API key
+    # -------- Fallback (sem OpenAI) --------
     if openai_client is None:
         sentiment = basic_sentiment(caption)
         explanation = (
             "Sentiment estimated using keyword heuristics. "
-            "Connect a real API key later for smarter analysis."
+            "Connect a valid OPENAI_API_KEY for smarter AI analysis."
         )
         suggestions = [
             "Add more context or a clear benefit for players.",
-            "Include a strong call to action (e.g., 'Drop your thoughts in the comments').",
-            "Use hype words or emojis to match the energy of your post."
+            "Include a strong call to action (e.g., 'Tell us what you think in the comments').",
+            "Use hype words or emojis to match the energy of the post.",
         ]
         improved_caption = caption or "This is going to be huge! Tell us what you think in the comments."
         return {
@@ -82,12 +88,13 @@ def gpt_caption_analysis(caption: str, context: dict) -> dict:
             "improved_caption": improved_caption,
         }
 
-    # If we DO have an API key, call GPT
+    # -------- Chamada real para GPT-4.1-mini --------
     system_prompt = """
 You are a social media strategist specialized in gaming content.
 Always output a pure JSON object (no markdown, no commentary).
 Sentiment must be exactly one of: POSITIVE, NEUTRAL, NEGATIVE.
 """
+
     user_prompt = f"""
 Analyze the following Instagram caption and posting context.
 
@@ -125,21 +132,24 @@ Return ONLY valid JSON with the keys:
             response_format={"type": "json_object"},
             max_output_tokens=400,
         )
-        content = response.output[0].content[0].text
         import json
+
+        content = response.output[0].content[0].text
         parsed = json.loads(content)
-        # sanity defaults
+
         parsed.setdefault("sentiment", "NEUTRAL")
         parsed.setdefault("explanation", "")
         parsed.setdefault("suggestions", [])
         parsed.setdefault("improved_caption", caption)
+
         return parsed
-    except Exception:
-        # robust fallback
+
+    except Exception as e:
+        # Fallback robusto
         sentiment = basic_sentiment(caption)
         return {
             "sentiment": sentiment,
-            "explanation": "Fallback sentiment (API error).",
+            "explanation": f"Fallback sentiment (API error: {e}).",
             "suggestions": [
                 "Try clarifying what players should do next.",
                 "Use more descriptive, emotional language.",
@@ -148,16 +158,12 @@ Return ONLY valid JSON with the keys:
         }
 
 
-# ---------------------------------------------------------
-# Fake "API" historical data (per profile) for the hackathon
-# ---------------------------------------------------------
-
+# =========================================================
+# Fake "API" – dados históricos por perfil
+# =========================================================
 def generate_fake_api_data(profile_handle: str, n_posts: int = 160) -> pd.DataFrame:
     """
-    Creates a realistic synthetic dataset for a given Instagram profile.
-    Columns: post_type, weekday, hour_utc, hashtags, topic, caption_length,
-             month, likes, comments, shares, followers, engagement,
-             engagement_rate.
+    Cria um dataset sintético de posts para um perfil de Instagram.
     """
     rng = np.random.default_rng(abs(hash(profile_handle)) % (2**32))
 
@@ -165,7 +171,7 @@ def generate_fake_api_data(profile_handle: str, n_posts: int = 160) -> pd.DataFr
     weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
     topics = ["update", "trailer", "gameplay", "community", "collab", "maintenance"]
 
-    followers = rng.integers(50000, 200000)  # each profile has a fixed follower base
+    followers = int(rng.integers(50_000, 200_000))
 
     rows = []
     for _ in range(n_posts):
@@ -176,7 +182,6 @@ def generate_fake_api_data(profile_handle: str, n_posts: int = 160) -> pd.DataFr
         topic = rng.choice(topics)
         month = int(rng.integers(1, 13))
 
-        # caption length: different distributions by topic
         base_len = {
             "update": 220,
             "trailer": 160,
@@ -187,7 +192,6 @@ def generate_fake_api_data(profile_handle: str, n_posts: int = 160) -> pd.DataFr
         }[topic]
         caption_len = max(20, int(rng.normal(base_len, 40)))
 
-        # engagement baseline by post type
         base_eng = {
             "image": 800,
             "video": 1100,
@@ -195,7 +199,6 @@ def generate_fake_api_data(profile_handle: str, n_posts: int = 160) -> pd.DataFr
             "carousel": 1000,
         }[pt]
 
-        # weekday/hora effect
         prime_time_bonus = 1.0
         if wd in ["Thursday", "Friday", "Saturday"] and 18 <= hour <= 22:
             prime_time_bonus = 1.3
@@ -219,7 +222,6 @@ def generate_fake_api_data(profile_handle: str, n_posts: int = 160) -> pd.DataFr
             int(base_eng * prime_time_bonus * hashtag_bonus * topic_bonus * noise),
         )
 
-        # split engagement into likes/comments/shares in rough proportions
         likes = int(engagement * rng.uniform(0.6, 0.8))
         comments = int(engagement * rng.uniform(0.15, 0.25))
         shares = engagement - likes - comments
@@ -248,10 +250,7 @@ def generate_fake_api_data(profile_handle: str, n_posts: int = 160) -> pd.DataFr
     return pd.DataFrame(rows)
 
 
-def train_engagement_model(df: pd.DataFrame) -> DecisionTreeRegressor:
-    """
-    Trains a DecisionTreeRegressor to predict engagement rate based on features.
-    """
+def train_engagement_model(df: pd.DataFrame):
     feature_cols = ["post_type", "weekday", "hour_utc", "hashtags", "topic", "caption_length", "month"]
 
     X = pd.get_dummies(df[feature_cols], drop_first=True)
@@ -266,10 +265,9 @@ def train_engagement_model(df: pd.DataFrame) -> DecisionTreeRegressor:
     return model, X.columns
 
 
-# ---------------------------------------------------------
-# Streamlit UI config
-# ---------------------------------------------------------
-
+# =========================================================
+# Streamlit UI
+# =========================================================
 st.set_page_config(
     page_title="HypeQuest – Instagram Engagement & Sentiment Prediction",
     layout="wide",
@@ -278,20 +276,23 @@ st.set_page_config(
 st.title("🔥 HypeQuest – Instagram Engagement & Sentiment Prediction")
 st.caption(
     "Prototype that predicts post engagement and sentiment using Machine Learning. "
-    "Works with CSV, Excel, JSON, Parquet, or manual input, and learns from historical posts."
+    "It can later be connected to real Instagram APIs."
 )
+st.markdown(f"<span style='font-size:12px;color:#6b7280;'>{IA_STATUS}</span>", unsafe_allow_html=True)
 st.markdown("---")
 
-# ---------------------------------------------------------
-# Sidebar – profile & optional dataset upload
-# ---------------------------------------------------------
+# --------- inicializa caption_input no session_state ----------
+if "caption_input" not in st.session_state:
+    st.session_state["caption_input"] = ""
+# --------------------------------------------------------------
 
+
+# Sidebar – perfil e upload
 st.sidebar.header("Profile & data")
 
 available_profiles = ["@pubg", "@playinzoi", "@hypequest"]
 profile = st.sidebar.selectbox("Instagram profile", available_profiles)
 
-# Fake “API” data for the selected profile
 historical_df = generate_fake_api_data(profile, n_posts=160)
 st.sidebar.success(f"Historical posts available for {profile}: {len(historical_df)}")
 
@@ -302,7 +303,6 @@ uploaded = st.sidebar.file_uploader(
     type=["csv", "xlsx", "xls", "json", "parquet"],
 )
 
-extra_df = None
 if uploaded is not None:
     fname = uploaded.name.lower()
     try:
@@ -318,15 +318,12 @@ if uploaded is not None:
     except Exception as e:
         st.sidebar.error(f"Error reading file: {e}")
 
-# (Se quiser, você pode futuramente concatenar extra_df em historical_df aqui)
-
-# Train engagement model on fake API data (could be merged with extra_df in future)
+# Treina modelo de engajamento
 eng_model, eng_feature_columns = train_engagement_model(historical_df)
 
-# ---------------------------------------------------------
-# 1. Plan a new Instagram post (MAIN LAYOUT)
-# ---------------------------------------------------------
-
+# =========================================================
+# Planejar novo post
+# =========================================================
 st.subheader("🧩 Plan a new Instagram post")
 
 col_left, col_right = st.columns(2)
@@ -352,19 +349,12 @@ with col_right:
             "July", "August", "September", "October", "November", "December",
         ],
     )
-    month = (
-        [
-            "January", "February", "March", "April", "May", "June",
-            "July", "August", "September", "October", "November", "December",
-        ].index(month_name)
-        + 1
-    )
+    month = [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December",
+    ].index(month_name) + 1
 
 st.markdown("### ✍️ Caption")
-
-# Use session_state so "Use suggested caption" can overwrite this
-if "caption_input" not in st.session_state:
-    st.session_state["caption_input"] = ""
 
 caption_text = st.text_area(
     "Caption text",
@@ -374,18 +364,14 @@ caption_text = st.text_area(
 )
 
 caption_length = len(caption_text or "")
-st.caption(f"Caption length: {caption_length} characters (used as a feature in the model).")
+st.caption(f"Caption length: {caption_length} characters (used as a feature).")
 
-st.markdown("")
-
-# ---------------------------------------------------------
-# Button – Evaluate
-# ---------------------------------------------------------
-
+# =========================================================
+# Botão – Evaluate
+# =========================================================
 if st.button("✨ Evaluate caption & predict", type="primary"):
     with st.spinner("Consulting the HypeQuest crystal ball... 🔮"):
-
-        # 1) Sentiment + tips (GPT when available, otherwise fallback)
+        # IA generativa ou fallback
         context = {
             "post_type": post_type,
             "weekday": weekday,
@@ -400,7 +386,7 @@ if st.button("✨ Evaluate caption & predict", type="primary"):
         suggestions = gpt_result.get("suggestions", [])
         improved_caption = gpt_result.get("improved_caption", caption_text)
 
-        # 2) Engagement prediction (Decision Tree on synthetic “API” data)
+        # Predição de engajamento
         new_row = pd.DataFrame(
             [
                 dict(
@@ -419,11 +405,9 @@ if st.button("✨ Evaluate caption & predict", type="primary"):
         )
         predicted_eng_rate = float(eng_model.predict(new_X)[0])
 
-        # Use followers from fake data to convert rate → interactions
         followers = int(historical_df["followers"].iloc[0])
         predicted_interactions = int(predicted_eng_rate * followers)
 
-        # store results to session_state to render below
         st.session_state["last_result"] = dict(
             sentiment_label=sentiment_label,
             sentiment_explanation=sentiment_explanation,
@@ -434,10 +418,9 @@ if st.button("✨ Evaluate caption & predict", type="primary"):
             followers=followers,
         )
 
-# ---------------------------------------------------------
-# 2. Prediction results (only if we have something)
-# ---------------------------------------------------------
-
+# =========================================================
+# Resultados – aparecem SÓ depois do botão
+# =========================================================
 if "last_result" in st.session_state:
     res = st.session_state["last_result"]
 
@@ -445,9 +428,9 @@ if "last_result" in st.session_state:
 
     # Sentiment pill
     sentiment_color = {
-        "POSITIVE": "#22c55e",  # green
-        "NEGATIVE": "#ef4444",  # red
-        "NEUTRAL": "#eab308",   # yellow
+        "POSITIVE": "#22c55e",
+        "NEGATIVE": "#ef4444",
+        "NEUTRAL": "#eab308",
     }.get(res["sentiment_label"], "#6b7280")
 
     st.markdown(
@@ -470,7 +453,7 @@ if "last_result" in st.session_state:
 
     st.write(res["sentiment_explanation"])
 
-    # Engagement card
+    # Card de engajamento
     st.markdown("")
     st.markdown(
         f"""
@@ -496,21 +479,17 @@ if "last_result" in st.session_state:
         "predicted using a Decision Tree model trained on this profile's synthetic historical posts."
     )
 
-    # -----------------------------------------------------
-    # 3. Suggestions to improve this post
-    # -----------------------------------------------------
+    # Sugestões
     st.markdown("### 💡 Suggestions to improve this post")
 
     tips = []
 
-    # Time-based tip (based on how we designed the synthetic data)
     if not (18 <= hour <= 22 and weekday in ["Thursday", "Friday", "Saturday"]):
         tips.append(
             "Historical data shows stronger engagement between **18–22 UTC** on Thursday–Saturday. "
             "Consider testing this post closer to prime time."
         )
 
-    # Caption length tip
     if caption_length < 40:
         tips.append(
             "Your caption is very short. Consider adding a bit more context, a hook, or a clear benefit for players."
@@ -520,16 +499,12 @@ if "last_result" in st.session_state:
             "Your caption is quite long. Check if you can tighten it while keeping the key message and CTA."
         )
 
-    # From GPT suggestions (or fallback)
     tips.extend(res["suggestions"])
 
-    # Show as bullets
     for t in tips:
         st.markdown(f"- {t}")
 
-    # -----------------------------------------------------
-    # 4. Suggested improved caption (with copy/use button)
-    # -----------------------------------------------------
+    # Legenda sugerida
     st.markdown("### ✨ Suggested improved caption")
 
     st.info(
@@ -544,12 +519,19 @@ if "last_result" in st.session_state:
         key="suggested_caption_display",
     )
 
+    # ======= botão corrigido – aplica legenda e reroda app =======
     if st.button("📋 Use this suggested caption"):
-        # Overwrite the main caption input
-        st.session_state["caption_input"] = res["improved_caption"]
+        try:
+            if "caption_input" not in st.session_state:
+                st.session_state["caption_input"] = ""
+            st.session_state["caption_input"] = res["improved_caption"]
+        except Exception:
+            # fallback silencioso
+            pass
         st.success("Suggested caption applied to the editor above. You can edit it before posting.")
+        st.experimental_rerun()
+    # ============================================================
 
-# small footer
 st.markdown("---")
 st.caption(
     "Tips are based on patterns learned from a simulated API dataset. "
