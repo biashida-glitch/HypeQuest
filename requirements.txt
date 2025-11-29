@@ -4,6 +4,5 @@ numpy
 matplotlib
 scikit-learn
 vaderSentiment
-openai
-
+openai>=1.10.0
 
