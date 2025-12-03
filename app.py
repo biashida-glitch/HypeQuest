@@ -8,6 +8,104 @@ from sklearn.tree import DecisionTreeRegressor
 from sklearn.model_selection import train_test_split
 
 # =========================================================
+# CONFIG GERAL DA PÁGINA
+# =========================================================
+
+st.set_page_config(
+    page_title="HypeQuest – Instagram Engagement & Sentiment Prediction",
+    page_icon="🎮",
+    layout="wide",
+)
+
+# ------------------------------
+# CSS ESTILO HYPE QUEST
+# ------------------------------
+st.markdown("""
+<style>
+    /* Fundo geral - céu */
+    .main {
+        background-color: #B7E3FF;
+    }
+
+    /* Centralizar container principal e limitar largura */
+    .block-container {
+        padding-top: 1rem;
+        max-width: 1100px;
+        margin: 0 auto;
+    }
+
+    /* Título principal estilo pixel */
+    .hype-title {
+        font-family: monospace;
+        font-size: 40px;
+        font-weight: 900;
+        letter-spacing: 4px;
+        color: #1C0A4A;
+        text-align: center;
+        text-transform: uppercase;
+        text-shadow: 3px 3px 0px #8FD0FF;
+        margin-top: 8px;
+        margin-bottom: 4px;
+    }
+
+    /* Subtítulo */
+    .hype-subtitle {
+        font-family: monospace;
+        font-size: 16px;
+        color: #1C0A4A;
+        text-align: center;
+        margin-bottom: 8px;
+    }
+
+    /* Badge de status IA */
+    .hype-status {
+        font-size: 12px;
+        color: #6b7280;
+        text-align: center;
+        margin-bottom: 6px;
+    }
+
+    /* Linha divisória mais suave */
+    hr {
+        border: none;
+        border-top: 2px solid #8FD0FF;
+        margin: 0.6rem 0 1rem 0;
+    }
+
+    /* Card pixelado (pode ser usado depois se quiser) */
+    .pixel-card {
+        background: #8FD0FF;
+        border: 4px solid #1C0A4A;
+        border-radius: 10px;
+        padding: 18px 20px;
+        box-shadow: 0px 5px 0px #1C0A4A;
+    }
+
+    /* Botão estilo START */
+    .stButton>button {
+        border-radius: 6px;
+        border: 3px solid #1C0A4A;
+        background: linear-gradient(180deg, #FFDD55 0%, #FFB800 70%);
+        color: #1C0A4A;
+        font-weight: bold;
+        font-size: 18px;
+        padding: 6px 22px;
+        box-shadow: 0px 4px 0px #D98F00;
+    }
+
+    .stButton>button:hover {
+        background: linear-gradient(180deg, #FFE680 0%, #FFC933 70%);
+        box-shadow: 0px 4px 0px #C57D00;
+    }
+
+    /* Sidebar com azul intermediário */
+    section[data-testid="stSidebar"] {
+        background-color: #8FD0FF !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# =========================================================
 # OpenAI client (optional) – works with new SDK (>=1.0)
 # =========================================================
 
@@ -323,24 +421,32 @@ def train_engagement_model(df: pd.DataFrame):
 
 
 # =========================================================
-# Streamlit UI
+# HEADER HYPE QUEST (KV + TÍTULO)
 # =========================================================
 
-st.set_page_config(
-    page_title="HypeQuest – Instagram Engagement & Sentiment Prediction",
-    layout="wide",
-)
+# TODO: ajuste o caminho/URL da imagem para o seu KV
+KV_IMAGE_PATH = "hypequest_kv.png"  # pode ser também uma URL
 
-st.title("🔥 HypeQuest – Instagram Engagement & Sentiment Prediction")
-st.caption(
-    "Prototype that predicts post engagement and sentiment using Machine Learning. "
-    "It can later be connected to real Instagram APIs."
+try:
+    st.image(KV_IMAGE_PATH, use_column_width=True)
+except Exception:
+    # se a imagem não existir, só ignora
+    pass
+
+st.markdown("<div class='hype-title'>HYPE QUEST</div>", unsafe_allow_html=True)
+st.markdown(
+    "<div class='hype-subtitle'>Instagram Engagement & Sentiment Prediction</div>",
+    unsafe_allow_html=True,
 )
 st.markdown(
-    f"<span style='font-size:12px;color:#6b7280;'>{IA_STATUS}</span>",
+    f"<div class='hype-status'>{IA_STATUS}</div>",
     unsafe_allow_html=True,
 )
 st.markdown("---")
+
+# =========================================================
+# Streamlit UI
+# =========================================================
 
 # Initialise caption input in session_state
 if "caption_input" not in st.session_state:
@@ -478,7 +584,7 @@ if "last_result" in st.session_state:
 # Button – Evaluate
 # =========================================================
 
-if st.button("✨ Evaluate caption & predict", type="primary"):
+if st.button("✨ Evaluate caption & predict"):
     with st.spinner("Consulting the HypeQuest crystal ball... 🔮"):
         # Generative AI or fallback
         context = {
@@ -643,3 +749,4 @@ st.caption(
     "Tips are based on patterns learned from a simulated API dataset. "
     "In production, this would be connected to real Instagram insights."
 )
+
