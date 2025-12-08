@@ -278,8 +278,6 @@ def fetch_follower_count(instagram_account_id: str, token: str) -> int:
         response.raise_for_status()
         data = response.json()
 
-        # followers_count is usually an integer, but this also
-        # handles the case where it is a nested object with "count"
         raw_count = data.get("followers_count")
 
         if isinstance(raw_count, dict):
@@ -298,19 +296,26 @@ def fetch_follower_count(instagram_account_id: str, token: str) -> int:
 def fetch_historical_data(instagram_account_id: str, token: str) -> pd.DataFrame:
     """
     Fetches historical media data (posts and metrics) from the Meta Graph API.
-    FIX: Using v19.0 and minimal, stable fields to avoid 400 error.
+    UPDATED: request like_count, comments_count, and caption so engagement varies.
     """
+    if not token or not instagram_account_id:
+        return pd.DataFrame()
+
     BASE_URL = f"https://graph.facebook.com/v19.0/{instagram_account_id}/media"
 
-    # Minimal, stable fields list
     fields = [
-        "id", "timestamp", "media_type"
+        "id",
+        "caption",
+        "timestamp",
+        "media_type",
+        "like_count",
+        "comments_count",
     ]
 
     params = {
         "fields": ",".join(fields),
         "access_token": token,
-        "limit": 100000
+        "limit": 100,
     }
 
     try:
@@ -318,18 +323,19 @@ def fetch_historical_data(instagram_account_id: str, token: str) -> pd.DataFrame
         response.raise_for_status()
         data = response.json()
     except requests.exceptions.RequestException as e:
-        st.sidebar.error(f"API Request Error (Minimal Fields): {e}")
+        st.sidebar.error(f"API Request Error (media metrics): {e}")
         return pd.DataFrame()
 
     post_list = []
 
-    # Placeholder values for missing metrics/features
-    FALLBACK_LIKES = 100
-    FALLBACK_COMMENTS = 10
-
     for post in data.get("data", []):
-        likes = post.get("like_count", FALLBACK_LIKES)
-        comments = post.get("comments_count", FALLBACK_COMMENTS)
+        # Ensure we have metrics; if not, skip to avoid constant data
+        likes = post.get("like_count")
+        comments = post.get("comments_count")
+
+        if likes is None or comments is None:
+            continue
+
         engagement = likes + comments
 
         media_type = post.get("media_type", "IMAGE").lower()
@@ -341,7 +347,7 @@ def fetch_historical_data(instagram_account_id: str, token: str) -> pd.DataFrame
         except Exception:
             continue
 
-        caption = post.get("caption", "")
+        caption = post.get("caption", "") or ""
 
         post_list.append({
             "post_type": media_type,
@@ -353,7 +359,6 @@ def fetch_historical_data(instagram_account_id: str, token: str) -> pd.DataFrame
             "comments": comments,
             "shares": 0,
             "engagement": engagement,
-            "engagement_rate": engagement / 100000,
             "id": post["id"],
             "timestamp": post_time,
             "caption": caption,
@@ -517,6 +522,11 @@ else:
     historical_df["followers"] = current_followers
     historical_df["engagement_rate"] = historical_df["engagement"] / current_followers
     st.sidebar.success(f"Loaded real posts for {profile}: {len(historical_df)}")
+
+# (Optional) quick check that engagement rate is not constant
+if not historical_df.empty:
+    with st.sidebar.expander("Engagement rate stats (debug)"):
+        st.write(historical_df["engagement_rate"].describe())
 
 # Train engagement model
 eng_model, eng_feature_columns = train_engagement_model(historical_df)
