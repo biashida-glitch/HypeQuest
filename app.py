@@ -1,13 +1,13 @@
 import os
+import json
 from datetime import datetime
 
 import numpy as np
 import pandas as pd
 import streamlit as st
+import requests
 from sklearn.tree import DecisionTreeRegressor
 from sklearn.model_selection import train_test_split
-st.set_page_config(layout="wide")
-
 
 # =========================================================
 # CONFIG GERAL DA PÁGINA
@@ -74,15 +74,6 @@ st.markdown("""
         margin: 0.6rem 0 1rem 0;
     }
 
-    /* Card pixelado (pode ser usado depois se quiser) */
-    .pixel-card {
-        background: #8FD0FF;
-        border: 4px solid #1C0A4A;
-        border-radius: 10px;
-        padding: 18px 20px;
-        box-shadow: 0px 5px 0px #1C0A4A;
-    }
-
     /* Botão estilo START */
     .stButton>button {
         border-radius: 6px;
@@ -108,9 +99,14 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =========================================================
-# OpenAI client (optional) – works with new SDK (>=1.0)
+# API Credentials and Client Setup
 # =========================================================
 
+# Load Meta API Credentials from secrets
+META_TOKEN = st.secrets.get("META_ACCESS_TOKEN", None)
+INSTAGRAM_ID = st.secrets.get("INSTAGRAM_ACCOUNT_ID", None)
+
+# OpenAI client (optional) – works with new SDK (>=1.0)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY", None)
 openai_client = None
 
@@ -132,37 +128,12 @@ else:
 # =========================================================
 
 POSITIVE_WORDS = {
-    "win",
-    "victory",
-    "amazing",
-    "awesome",
-    "love",
-    "great",
-    "hype",
-    "excited",
-    "epic",
-    "gg",
-    "insane",
-    "crazy",
-    "wow",
-    "🔥",
-    "🥳",
+    "win", "victory", "amazing", "awesome", "love", "great", "hype", 
+    "excited", "epic", "gg", "insane", "crazy", "wow", "🔥", "🥳",
 }
 NEGATIVE_WORDS = {
-    "bug",
-    "issue",
-    "error",
-    "lag",
-    "toxic",
-    "hate",
-    "angry",
-    "sad",
-    "broken",
-    "crash",
-    "fuck",
-    "shit",
-    "bad",
-    "😭",
+    "bug", "issue", "error", "lag", "toxic", "hate", "angry", "sad", 
+    "broken", "crash", "fuck", "shit", "bad", "😭",
 }
 
 
@@ -189,14 +160,10 @@ def basic_sentiment(caption: str) -> str:
 
 def gpt_caption_analysis(caption: str, context: dict) -> dict:
     """
-    Uses GPT (if available) to:
-      - classify sentiment
-      - explain
-      - give suggestions
-      - suggest an improved caption
-
+    Uses GPT (if available) to analyze caption and context.
     If no API / error → falls back to basic heuristic.
     """
+    # ... (function body remains the same as your original code) ...
 
     # -------- Fallback (no OpenAI) --------
     if openai_client is None:
@@ -238,7 +205,6 @@ Context:
 - Weekday: {context.get("weekday")}
 - Posting hour (UTC): {context.get("hour")}
 - Number of hashtags: {context.get("hashtags")}
-- Topic: {context.get("topic")}
 - Profile: {context.get("profile")}
 
 Tasks:
@@ -267,8 +233,6 @@ Return ONLY valid JSON with the keys:
 
         raw_content = chat.choices[0].message.content
 
-        import json
-
         try:
             parsed = json.loads(raw_content)
         except json.JSONDecodeError:
@@ -296,29 +260,103 @@ Return ONLY valid JSON with the keys:
             "improved_caption": caption,
         }
 
+# =========================================================
+# REAL API DATA FETCHING (Instagram)
+# =========================================================
+
+@st.cache_data
+def fetch_historical_data(instagram_account_id: str, token: str) -> pd.DataFrame:
+    """
+    Fetches historical media data (posts and metrics) from the Meta Graph API.
+    """
+    # 1. Define the API endpoint and fields (metrics) you need
+    BASE_URL = f"https://graph.facebook.com/v24.0/{instagram_account_id}/media"
+    
+    # Fields must be requested explicitly to get metrics
+    fields = [
+        "id", "caption", "media_type", "timestamp", "like_count", 
+        "comments_count", "shares", # Shares is often an estimated/unavailable field
+    ]
+    
+    params = {
+        "fields": ",".join(fields),
+        "access_token": token,
+        "limit": 100 # Fetch 100 recent posts
+    }
+    
+    # 2. Make the API request
+    try:
+        response = requests.get(BASE_URL, params=params)
+        response.raise_for_status() # Raise an HTTPError for bad responses (4xx or 5xx)
+        data = response.json()
+    except requests.exceptions.RequestException as e:
+        st.error(f"API Request Error: {e}")
+        return pd.DataFrame()
+
+    # 3. Process the data and transform it into a DataFrame
+    post_list = []
+    
+    # NOTE: You need a separate call to get the current followers count.
+    # For simplicity, we assume a placeholder follower count below.
+    # The actual followers_count call would be: 
+    # GET /{instagram_account_id}?fields=followers_count
+
+    for post in data.get("data", []):
+        # Calculate engagement based on available metrics
+        engagement = post.get("like_count", 0) + post.get("comments_count", 0) + post.get("shares", 0)
+
+        # Extract contextual features (for your model)
+        # Handle potential media types returned as different cases
+        media_type = post.get("media_type", "IMAGE").lower()
+        if media_type == 'carousel_album':
+             media_type = 'carousel'
+
+        # Safely parse timestamp
+        try:
+            post_time = datetime.fromisoformat(post["timestamp"].replace("+0000", "+00:00"))
+        except Exception:
+            continue # Skip post if timestamp is invalid
+
+        caption = post.get("caption", "")
+        
+        post_list.append({
+            # Features for Prediction Model (Input X)
+            "post_type": media_type,
+            "weekday": post_time.strftime("%A"),
+            "hour_utc": post_time.hour,
+            "hashtags": caption.count("#"), 
+            "caption_length": len(caption),
+            # Target Variables (Output Y)
+            "likes": post.get("like_count", 0),
+            "comments": post.get("comments_count", 0),
+            "shares": post.get("shares", 0),
+            "engagement": engagement,
+            # Metadata
+            "id": post["id"],
+            "timestamp": post_time,
+            "caption": caption,
+        })
+    
+    df = pd.DataFrame(post_list)
+    return df
 
 # =========================================================
-# Fake API – historical data per profile
+# FAKE API DATA FALLBACK (Simplified and Aligned)
 # =========================================================
 
 
 def generate_fake_api_data(profile_handle: str, n_posts: int = 160) -> pd.DataFrame:
     """
-    Creates a synthetic dataset for a given Instagram profile.
+    Creates a synthetic dataset for a given Instagram profile,
+    ALIGNED to the real API features (no topic/month).
     """
     rng = np.random.default_rng(abs(hash(profile_handle)) % (2**32))
 
     post_types = ["image", "video", "reels", "carousel"]
     weekdays = [
-        "Monday",
-        "Tuesday",
-        "Wednesday",
-        "Thursday",
-        "Friday",
-        "Saturday",
-        "Sunday",
+        "Monday", "Tuesday", "Wednesday", "Thursday",
+        "Friday", "Saturday", "Sunday",
     ]
-    topics = ["update", "trailer", "gameplay", "community", "collab", "maintenance"]
 
     followers = int(rng.integers(50_000, 200_000))
 
@@ -328,24 +366,15 @@ def generate_fake_api_data(profile_handle: str, n_posts: int = 160) -> pd.DataFr
         wd = rng.choice(weekdays)
         hour = int(rng.integers(0, 24))
         tags = int(rng.integers(0, 10))
-        topic = rng.choice(topics)
-        month = int(rng.integers(1, 13))
+        
+        caption_len = max(20, int(rng.normal(200, 40)))
 
-        base_len = {
-            "update": 220,
-            "trailer": 160,
-            "gameplay": 180,
-            "community": 190,
-            "collab": 210,
-            "maintenance": 170,
-        }[topic]
-        caption_len = max(20, int(rng.normal(base_len, 40)))
-
+        # Simplified base engagement calculation (no longer topic-dependent)
         base_eng = {
-            "image": 800,
-            "video": 1100,
-            "reels": 1400,
-            "carousel": 1000,
+            "image": 900,
+            "video": 1200,
+            "reels": 1500,
+            "carousel": 1100,
         }[pt]
 
         prime_time_bonus = 1.0
@@ -355,20 +384,12 @@ def generate_fake_api_data(profile_handle: str, n_posts: int = 160) -> pd.DataFr
             prime_time_bonus = 0.7
 
         hashtag_bonus = 1.0 + min(tags, 6) * 0.03
-        topic_bonus = {
-            "update": 1.1,
-            "trailer": 1.05,
-            "gameplay": 1.08,
-            "community": 0.95,
-            "collab": 1.12,
-            "maintenance": 0.85,
-        }[topic]
-
+        
         noise = rng.normal(1.0, 0.2)
 
         engagement = max(
             50,
-            int(base_eng * prime_time_bonus * hashtag_bonus * topic_bonus * noise),
+            int(base_eng * prime_time_bonus * hashtag_bonus * noise),
         )
 
         likes = int(engagement * rng.uniform(0.6, 0.8))
@@ -384,9 +405,7 @@ def generate_fake_api_data(profile_handle: str, n_posts: int = 160) -> pd.DataFr
                 weekday=wd,
                 hour_utc=hour,
                 hashtags=tags,
-                topic=topic,
                 caption_length=caption_len,
-                month=month,
                 likes=likes,
                 comments=comments,
                 shares=shares,
@@ -398,16 +417,19 @@ def generate_fake_api_data(profile_handle: str, n_posts: int = 160) -> pd.DataFr
 
     return pd.DataFrame(rows)
 
+# =========================================================
+# Model Training (Modified for simplified features)
+# =========================================================
+
 
 def train_engagement_model(df: pd.DataFrame):
+    # Only use features that are available from the Meta API (or derived from caption)
     feature_cols = [
         "post_type",
         "weekday",
         "hour_utc",
         "hashtags",
-        "topic",
         "caption_length",
-        "month",
     ]
 
     X = pd.get_dummies(df[feature_cols], drop_first=True)
@@ -447,7 +469,7 @@ st.markdown(
 st.markdown("---")
 
 # =========================================================
-# Streamlit UI
+# Streamlit UI & Data Loading Logic
 # =========================================================
 
 # Initialise caption input in session_state
@@ -460,8 +482,27 @@ st.sidebar.header("Profile & data")
 available_profiles = ["@pubg", "@playinzoi", "@hypequest"]
 profile = st.sidebar.selectbox("Instagram profile", available_profiles)
 
-historical_df = generate_fake_api_data(profile, n_posts=160)
-st.sidebar.success(f"Historical posts available for {profile}: {len(historical_df)}")
+# --- API FIRST, FALLBACK SECOND ---
+historical_df = pd.DataFrame() 
+
+if META_TOKEN and INSTAGRAM_ID:
+    with st.spinner("Attempting to load real data from Meta API..."):
+        historical_df = fetch_historical_data(INSTAGRAM_ID, META_TOKEN)
+else:
+    st.sidebar.warning("API credentials missing. Falling back to synthetic data.")
+
+
+if historical_df.empty or historical_df.shape[0] < 5:
+    # If the API failed to return data or returned too few posts, use the fake generator
+    st.sidebar.error("API failed or returned insufficient data. Generating synthetic data.")
+    historical_df = generate_fake_api_data(profile, n_posts=160)
+    st.sidebar.success(f"Synthetic posts available for {profile}: {len(historical_df)}")
+else:
+    # Estimate followers from historical data (best effort without dedicated followers API call)
+    historical_df["followers"] = historical_df["engagement"] / historical_df["engagement_rate"] if "engagement_rate" in historical_df.columns else 100000
+    st.sidebar.success(f"Loaded real posts for {profile}: {len(historical_df)}")
+# --- END API/FALLBACK ---
+
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("Load post dataset (optional)")
@@ -502,53 +543,13 @@ with col_left:
     weekday = st.selectbox(
         "Weekday",
         [
-            "Monday",
-            "Tuesday",
-            "Wednesday",
-            "Thursday",
-            "Friday",
-            "Saturday",
-            "Sunday",
+            "Monday", "Tuesday", "Wednesday", "Thursday",
+            "Friday", "Saturday", "Sunday",
         ],
     )
     hashtags = st.slider("Number of hashtags", 0, 15, 3)
 
-with col_right:
-    topic = st.selectbox(
-        "Post topic",
-        ["update", "trailer", "gameplay", "community", "collab", "maintenance"],
-    )
-    month_name = st.selectbox(
-        "Month (display only)",
-        [
-            "January",
-            "February",
-            "March",
-            "April",
-            "May",
-            "June",
-            "July",
-            "August",
-            "September",
-            "October",
-            "November",
-            "December",
-        ],
-    )
-    month = [
-        "January",
-        "February",
-        "March",
-        "April",
-        "May",
-        "June",
-        "July",
-        "August",
-        "September",
-        "October",
-        "November",
-        "December",
-    ].index(month_name) + 1
+# Removed: Post topic and Month selectors
 
 st.markdown("### ✍️ Caption")
 
@@ -570,10 +571,9 @@ current_inputs = dict(
     hour=hour,
     weekday=weekday,
     hashtags=hashtags,
-    topic=topic,
-    month=month,
     caption=caption_text,
     profile=profile,
+    # Removed: topic, month
 )
 
 # If we have previous result and inputs changed → drop result
@@ -594,8 +594,8 @@ if st.button("✨ Evaluate caption & predict"):
             "weekday": weekday,
             "hour": hour,
             "hashtags": hashtags,
-            "topic": topic,
             "profile": profile,
+            # Removed: topic, month
         }
         gpt_result = gpt_caption_analysis(caption_text, context)
         sentiment_label = gpt_result["sentiment"].upper()
@@ -611,9 +611,8 @@ if st.button("✨ Evaluate caption & predict"):
                     weekday=weekday,
                     hour_utc=hour,
                     hashtags=hashtags,
-                    topic=topic,
                     caption_length=caption_length if caption_length > 0 else 40,
-                    month=month,
+                    # Removed: topic, month
                 )
             ]
         )
@@ -622,7 +621,7 @@ if st.button("✨ Evaluate caption & predict"):
         )
         predicted_eng_rate = float(eng_model.predict(new_X)[0])
 
-        followers = int(historical_df["followers"].iloc[0])
+        followers = int(historical_df["followers"].iloc[0] if not historical_df.empty else 100000)
         predicted_interactions = int(predicted_eng_rate * followers)
 
         st.session_state["last_result"] = dict(
@@ -660,8 +659,8 @@ if "last_result" in st.session_state:
                     border:1px solid {sentiment_color};
                     margin-bottom:8px;">
             <span style="width:8px;height:8px;border-radius:999px;
-                         background-color:{sentiment_color};
-                         display:inline-block;margin-right:8px;"></span>
+                          background-color:{sentiment_color};
+                          display:inline-block;margin-right:8px;"></span>
             <span style="font-weight:600;color:{sentiment_color};">
                 {res['sentiment_label']}
             </span>
@@ -679,7 +678,7 @@ if "last_result" in st.session_state:
         <div style="border-radius:12px;padding:16px 20px;
                     background-color:#e0f2fe;border:1px solid #bae6fd;">
             <div style="font-size:13px;color:#0369a1;
-                        font-weight:600;margin-bottom:4px;">
+                         font-weight:600;margin-bottom:4px;">
                 Predicted engagement
             </div>
             <div style="font-size:22px;font-weight:700;color:#0f172a;">
@@ -695,7 +694,7 @@ if "last_result" in st.session_state:
 
     st.caption(
         "Sentiment is estimated using caption text and context; engagement is "
-        "predicted using a Decision Tree model trained on this profile's synthetic historical posts."
+        "predicted using a Decision Tree model trained on this profile's historical posts (real or synthetic)."
     )
 
     # Suggestions
@@ -748,7 +747,5 @@ if "last_result" in st.session_state:
 
 st.markdown("---")
 st.caption(
-    "Tips are based on patterns learned from a simulated API dataset. "
-    "In production, this would be connected to real Instagram insights."
+    "Data used for training is either fetched live from the Meta API or generated synthetically as a fallback."
 )
-
