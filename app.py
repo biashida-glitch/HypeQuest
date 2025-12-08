@@ -275,7 +275,7 @@ def fetch_historical_data(instagram_account_id: str, token: str) -> pd.DataFrame
     # Fields must be requested explicitly to get metrics
     fields = [
         "id", "caption", "media_type", "timestamp", "like_count", 
-        "comments_count", "shares", # Shares is often an estimated/unavailable field
+        "comments_count"
     ]
     
     params = {
@@ -303,7 +303,7 @@ def fetch_historical_data(instagram_account_id: str, token: str) -> pd.DataFrame
 
     for post in data.get("data", []):
         # Calculate engagement based on available metrics
-        engagement = post.get("like_count", 0) + post.get("comments_count", 0) + post.get("shares", 0)
+        engagement = post.get("like_count", 0) + post.get("comments_count", 0)
 
         # Extract contextual features (for your model)
         # Handle potential media types returned as different cases
@@ -329,7 +329,6 @@ def fetch_historical_data(instagram_account_id: str, token: str) -> pd.DataFrame
             # Target Variables (Output Y)
             "likes": post.get("like_count", 0),
             "comments": post.get("comments_count", 0),
-            "shares": post.get("shares", 0),
             "engagement": engagement,
             # Metadata
             "id": post["id"],
@@ -394,7 +393,6 @@ def generate_fake_api_data(profile_handle: str, n_posts: int = 160) -> pd.DataFr
 
         likes = int(engagement * rng.uniform(0.6, 0.8))
         comments = int(engagement * rng.uniform(0.15, 0.25))
-        shares = engagement - likes - comments
 
         engagement_rate = engagement / followers
 
@@ -408,7 +406,6 @@ def generate_fake_api_data(profile_handle: str, n_posts: int = 160) -> pd.DataFr
                 caption_length=caption_len,
                 likes=likes,
                 comments=comments,
-                shares=shares,
                 followers=followers,
                 engagement=engagement,
                 engagement_rate=engagement_rate,
