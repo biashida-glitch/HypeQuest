@@ -106,21 +106,54 @@ st.markdown("""
 META_TOKEN = st.secrets.get("META_ACCESS_TOKEN", None)
 INSTAGRAM_ID = st.secrets.get("INSTAGRAM_ACCOUNT_ID", None)
 
-# OpenAI client (optional) – works with new SDK (>=1.0)
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY", None)
+
+def get_openai_api_key() -> str | None:
+    """
+    Try to load the OpenAI API key from several possible locations:
+    - Environment variable OPENAI_API_KEY
+    - st.secrets["OPENAI_API_KEY"]
+    - st.secrets["openai_api_key"]
+    - st.secrets["openai"]["api_key"] (nested)
+    """
+    # 1) Environment variable has highest priority
+    env_key = os.getenv("OPENAI_API_KEY")
+    if env_key:
+        return env_key
+
+    # 2) Flat secrets
+    if "OPENAI_API_KEY" in st.secrets:
+        return st.secrets["OPENAI_API_KEY"]
+    if "openai_api_key" in st.secrets:
+        return st.secrets["openai_api_key"]
+
+    # 3) Nested secrets (e.g. [openai] api_key="...")
+    if "openai" in st.secrets:
+        nested = st.secrets["openai"]
+        # nested can be a dict-like object
+        if isinstance(nested, dict) and "api_key" in nested:
+            return nested["api_key"]
+
+    return None
+
+
+OPENAI_API_KEY = get_openai_api_key()
 openai_client = None
 
-try:
-    if OPENAI_API_KEY:
+openai_import_error = None
+if OPENAI_API_KEY:
+    try:
         from openai import OpenAI
         openai_client = OpenAI(api_key=OPENAI_API_KEY)
-except Exception:
-    openai_client = None
+    except Exception as e:
+        openai_import_error = str(e)
+        openai_client = None
 
 if OPENAI_API_KEY and openai_client:
     IA_STATUS = "✅ Generative AI (GPT-4.1-mini) enabled"
+elif not OPENAI_API_KEY:
+    IA_STATUS = "⚠️ Generative AI disabled (no OPENAI_API_KEY found in env or secrets)"
 else:
-    IA_STATUS = "⚠️ Generative AI disabled (no valid OPENAI_API_KEY or OpenAI SDK)"
+    IA_STATUS = f"⚠️ Generative AI disabled (OpenAI SDK error: {openai_import_error})"
 
 # =========================================================
 # Simple keyword sentiment fallback
@@ -298,11 +331,11 @@ def fetch_follower_count(instagram_account_id: str, token: str) -> int:
 def fetch_historical_data(instagram_account_id: str, token: str) -> pd.DataFrame:
     """
     Fetches historical media data (posts and metrics) from the Meta Graph API.
-    Uses v19.0 and requests metrics so engagement is not constant.
+    Uses v19.0 and requests caption + like_count + comments_count so
+    engagement is based on real interactions (likes + comments).
     """
     BASE_URL = f"https://graph.facebook.com/v19.0/{instagram_account_id}/media"
 
-    # Request caption + like_count + comments_count as well as media info
     fields = [
         "id",
         "caption",
@@ -315,7 +348,7 @@ def fetch_historical_data(instagram_account_id: str, token: str) -> pd.DataFrame
     params = {
         "fields": ",".join(fields),
         "access_token": token,
-        "limit": 100000,  # your original high limit
+        "limit": 100000,  # keep your original high limit
     }
 
     try:
@@ -337,7 +370,7 @@ def fetch_historical_data(instagram_account_id: str, token: str) -> pd.DataFrame
         if likes is None or comments is None:
             continue
 
-        engagement = likes + comments
+        engagement = (likes or 0) + (comments or 0)
 
         media_type = post.get("media_type", "IMAGE").lower()
         if media_type == 'carousel_album':
@@ -359,9 +392,8 @@ def fetch_historical_data(instagram_account_id: str, token: str) -> pd.DataFrame
             "likes": likes,
             "comments": comments,
             "shares": 0,
-            "engagement": engagement,
-            # placeholder; overwritten later with real follower count
-            "engagement_rate": engagement / 100000,
+            "engagement": engagement,              # interactions = likes + comments
+            "engagement_rate": engagement / 100000,  # placeholder, overwritten later
             "id": post["id"],
             "timestamp": post_time,
             "caption": caption,
