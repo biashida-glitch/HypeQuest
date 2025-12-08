@@ -158,7 +158,6 @@ def basic_sentiment(caption: str) -> str:
 
 
 def gpt_caption_analysis(caption: str, context: dict) -> dict:
-    # ... (function body for gpt_caption_analysis remains the same) ...
     
     # -------- Fallback (no OpenAI) --------
     if openai_client is None:
@@ -254,7 +253,6 @@ Return ONLY valid JSON with the keys:
             "improved_caption": caption,
         }
 
-
 # =========================================================
 # META API FUNCTIONS
 # =========================================================
@@ -263,15 +261,14 @@ Return ONLY valid JSON with the keys:
 def fetch_follower_count(instagram_account_id: str, token: str) -> int:
     """
     Fetches the current follower count for the Instagram Business Account.
-    FIX: Using v20.0 and robust field name.
+    FIX: Using v19.0 and robust field name.
     """
     if not token or not instagram_account_id:
         return 150000 
 
-    # ACTION A: Update API version
-    BASE_URL = f"https://graph.facebook.com/v20.0/{instagram_account_id}"
+    # ACTION: Use a stable API version
+    BASE_URL = f"https://graph.facebook.com/v19.0/{instagram_account_id}"
     
-    # ACTION B: Request the stable 'followers_count' field
     params = {
         "fields": "followers_count",
         "access_token": token,
@@ -282,7 +279,7 @@ def fetch_follower_count(instagram_account_id: str, token: str) -> int:
         response.raise_for_status()
         data = response.json()
         
-        # Access the nested count field, which is common for this endpoint
+        # Access the nested count field
         count = data.get("followers_count", {}).get("count")
         
         return int(count) if count is not None else 150000
@@ -296,16 +293,14 @@ def fetch_follower_count(instagram_account_id: str, token: str) -> int:
 def fetch_historical_data(instagram_account_id: str, token: str) -> pd.DataFrame:
     """
     Fetches historical media data (posts and metrics) from the Meta Graph API.
-    FIX: Using v20.0 and minimal, stable fields to avoid 400 error.
+    FIX: Using v19.0 and minimal, stable fields to avoid 400 error.
     """
-    # ACTION A: Update API version
-    BASE_URL = f"https://graph.facebook.com/v20.0/{instagram_account_id}/media"
+    # ACTION: Use a stable API version
+    BASE_URL = f"https://graph.facebook.com/v19.0/{instagram_account_id}/media"
     
-    # ACTION C: Minimal, stable fields list (removing 'caption' for stability)
+    # ACTION: Minimal, stable fields list (removed 'caption' for stability)
     fields = [
         "id", "timestamp", "media_type" 
-        # Note: 'like_count' and 'comments_count' should be added back here 
-        # only after the current minimal set succeeds.
     ]
     
     params = {
