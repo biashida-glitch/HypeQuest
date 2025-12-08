@@ -1,6 +1,7 @@
 import os
 import json
 from datetime import datetime
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -102,34 +103,26 @@ st.markdown("""
 # API Credentials and Client Setup
 # =========================================================
 
-# Load Meta API Credentials from secrets
+# Meta
 META_TOKEN = st.secrets.get("META_ACCESS_TOKEN", None)
-INSTAGRAM_ID = st.secrets.get("INSTAGRAM_ACCOUNT_ID", None)
+INSTAGRAM_ID = st.secrets.get("INSTAGRAM_ACCOUNT_ID", None)  # PUBG MENA
 
-
-def get_openai_api_key() -> str | None:
-    """
-    Try to load the OpenAI API key from several possible locations:
-    - Environment variable OPENAI_API_KEY
-    - st.secrets["OPENAI_API_KEY"]
-    - st.secrets["openai_api_key"]
-    - st.secrets["openai"]["api_key"] (nested)
-    """
-    # 1) Environment variable has highest priority
+# -------- OpenAI: carregamento robusto --------
+def get_openai_api_key() -> Optional[str]:
+    # 1) Ambiente
     env_key = os.getenv("OPENAI_API_KEY")
     if env_key:
         return env_key
 
-    # 2) Flat secrets
+    # 2) Secrets flat
     if "OPENAI_API_KEY" in st.secrets:
         return st.secrets["OPENAI_API_KEY"]
     if "openai_api_key" in st.secrets:
         return st.secrets["openai_api_key"]
 
-    # 3) Nested secrets (e.g. [openai] api_key="...")
+    # 3) Secrets aninhado: [openai] api_key="..."
     if "openai" in st.secrets:
         nested = st.secrets["openai"]
-        # nested can be a dict-like object
         if isinstance(nested, dict) and "api_key" in nested:
             return nested["api_key"]
 
@@ -138,8 +131,8 @@ def get_openai_api_key() -> str | None:
 
 OPENAI_API_KEY = get_openai_api_key()
 openai_client = None
-
 openai_import_error = None
+
 if OPENAI_API_KEY:
     try:
         from openai import OpenAI
@@ -290,11 +283,10 @@ Return ONLY valid JSON with the keys:
 # META API FUNCTIONS
 # =========================================================
 
-@st.cache_data
+@st.cache_data(ttl=600)  # atualiza automaticamente a cada 10 minutos
 def fetch_follower_count(instagram_account_id: str, token: str) -> int:
     """
     Fetches the current follower count for the Instagram Business Account.
-    FIX: Using v19.0 and robust field name.
     """
     if not token or not instagram_account_id:
         return 150000
@@ -311,8 +303,6 @@ def fetch_follower_count(instagram_account_id: str, token: str) -> int:
         response.raise_for_status()
         data = response.json()
 
-        # followers_count is usually an integer, but this also
-        # handles the case where it is a nested object with "count"
         raw_count = data.get("followers_count")
 
         if isinstance(raw_count, dict):
@@ -327,7 +317,7 @@ def fetch_follower_count(instagram_account_id: str, token: str) -> int:
         return 150000
 
 
-@st.cache_data
+@st.cache_data(ttl=600)  # idem: posts atualizados periodicamente
 def fetch_historical_data(instagram_account_id: str, token: str) -> pd.DataFrame:
     """
     Fetches historical media data (posts and metrics) from the Meta Graph API.
@@ -348,7 +338,7 @@ def fetch_historical_data(instagram_account_id: str, token: str) -> pd.DataFrame
     params = {
         "fields": ",".join(fields),
         "access_token": token,
-        "limit": 100000,  # keep your original high limit
+        "limit": 100000,
     }
 
     try:
@@ -362,11 +352,9 @@ def fetch_historical_data(instagram_account_id: str, token: str) -> pd.DataFrame
     post_list = []
 
     for post in data.get("data", []):
-        # real metrics from API
         likes = post.get("like_count")
         comments = post.get("comments_count")
 
-        # if metrics are missing, skip to avoid constant fallbacks
         if likes is None or comments is None:
             continue
 
@@ -393,7 +381,7 @@ def fetch_historical_data(instagram_account_id: str, token: str) -> pd.DataFrame
             "comments": comments,
             "shares": 0,
             "engagement": engagement,              # interactions = likes + comments
-            "engagement_rate": engagement / 100000,  # placeholder, overwritten later
+            "engagement_rate": engagement / 100000,  # placeholder, será sobrescrito
             "id": post["id"],
             "timestamp": post_time,
             "caption": caption,
@@ -409,7 +397,7 @@ def fetch_historical_data(instagram_account_id: str, token: str) -> pd.DataFrame
 def generate_fake_api_data(profile_handle: str, n_posts: int = 160, followers: int = 150000) -> pd.DataFrame:
     """
     Creates a synthetic dataset for a given Instagram profile,
-    ALIGNED to the real API features (no topic/month).
+    ALIGNED to the real API features.
     """
     rng = np.random.default_rng(abs(hash(profile_handle)) % (2**32))
 
@@ -532,31 +520,61 @@ if "caption_input" not in st.session_state:
 
 st.sidebar.header("Profile & data")
 
-available_profiles = ["@pubgbattlegrounds_mena", "@playinzoi", "@yourprofile"]
-profile = st.sidebar.selectbox("Instagram profile", available_profiles)
+# Configuração de perfis (pronto para futuras APIs)
+PROFILE_CONFIG = {
+    "@pubgbattlegrounds_mena": {
+        "use_real_api": True,
+        "instagram_id": INSTAGRAM_ID,        # vindo do secrets
+        "default_followers": 150_000,
+    },
+    "@yourprofile": {
+        "use_real_api": False,               # apenas fake data por enquanto
+        "instagram_id": None,
+        "default_followers": 10_000,
+    },
+    # TODO: adicionar novos perfis aqui no futuro
+}
 
-# --- Data Loading Logic ---
+available_profiles = list(PROFILE_CONFIG.keys())
+profile = st.sidebar.selectbox("Instagram profile", available_profiles)
+cfg = PROFILE_CONFIG[profile]
+
 historical_df = pd.DataFrame()
 
-# 1. Fetch Follower Count (Real or Fallback)
-current_followers = fetch_follower_count(INSTAGRAM_ID, META_TOKEN)
+# 1. Followers (real ou default)
+if cfg["use_real_api"] and META_TOKEN and cfg["instagram_id"]:
+    current_followers = fetch_follower_count(cfg["instagram_id"], META_TOKEN)
+else:
+    current_followers = cfg["default_followers"]
+
 st.sidebar.info(f"Followers for {profile}: {current_followers:,}")
 
-# 2. Attempt to load real data
-if META_TOKEN and INSTAGRAM_ID:
+# 2. Dados históricos (real ou não)
+if cfg["use_real_api"] and META_TOKEN and cfg["instagram_id"]:
     with st.spinner("Attempting to load real data from Meta API..."):
-        historical_df = fetch_historical_data(INSTAGRAM_ID, META_TOKEN)
+        historical_df = fetch_historical_data(cfg["instagram_id"], META_TOKEN)
 
-# 3. Fallback Check and Data Alignment
+# 3. Fallback para dados sintéticos
 if historical_df.empty or historical_df.shape[0] < 5:
-    st.sidebar.error("API failed or returned insufficient data. Generating synthetic data.")
+    if cfg["use_real_api"]:
+        st.sidebar.error(
+            "API failed or returned insufficient data. Generating synthetic data for this profile."
+        )
+    else:
+        st.sidebar.info("Using synthetic data for this profile.")
     historical_df = generate_fake_api_data(profile, n_posts=160, followers=current_followers)
     st.sidebar.success(f"Synthetic posts available for {profile}: {len(historical_df)}")
 else:
-    # If API succeeded, align its data with the real follower count
     historical_df["followers"] = current_followers
     historical_df["engagement_rate"] = historical_df["engagement"] / current_followers
-    st.sidebar.success(f"Loaded posts for {profile}: {len(historical_df)}")
+    st.sidebar.success(f"Loaded real posts for {profile}: {len(historical_df)}")
+
+# Botão para forçar atualização imediata (limpa cache e reroda)
+if cfg["use_real_api"] and META_TOKEN and cfg["instagram_id"]:
+    if st.sidebar.button("🔄 Refresh Instagram data"):
+        fetch_follower_count.clear()
+        fetch_historical_data.clear()
+        st.experimental_rerun()
 
 # Train engagement model
 eng_model, eng_feature_columns = train_engagement_model(historical_df)
@@ -669,7 +687,6 @@ if st.button("✨ Evaluate caption & predict"):
         )
         predicted_eng_rate = float(eng_model.predict(new_X)[0])
 
-        # Use the current_followers value for prediction
         predicted_interactions = int(predicted_eng_rate * current_followers)
 
         st.session_state["last_result"] = dict(
@@ -692,7 +709,6 @@ if "last_result" in st.session_state:
 
     st.markdown("## 🔍 Prediction results")
 
-    # Sentiment pill
     sentiment_color = {
         "POSITIVE": "#22c55e",
         "NEGATIVE": "#ef4444",
@@ -719,7 +735,6 @@ if "last_result" in st.session_state:
 
     st.write(res["sentiment_explanation"])
 
-    # Engagement card
     st.markdown("")
     st.markdown(
         f"""
@@ -745,7 +760,6 @@ if "last_result" in st.session_state:
         "predicted using a Decision Tree model trained on this profile's historical posts (real or synthetic)."
     )
 
-    # Suggestions
     st.markdown("### 💡 Suggestions to improve this post")
 
     tips = []
@@ -770,7 +784,6 @@ if "last_result" in st.session_state:
     for t in tips:
         st.markdown(f"- {t}")
 
-    # Suggested caption
     st.markdown("### ✨ Suggested improved caption")
 
     st.info(
