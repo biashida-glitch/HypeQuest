@@ -492,7 +492,7 @@ if "caption_input" not in st.session_state:
 
 st.sidebar.header("Profile & data")
 
-available_profiles = ["@pubg", "@playinzoi", "@hypequest"]
+available_profiles = ["@pubgbattlegrounds_mena", "@playinzoi", "@hypequest"]
 profile = st.sidebar.selectbox("Instagram profile", available_profiles)
 
 # --- Data Loading Logic ---
