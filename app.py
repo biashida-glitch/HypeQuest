@@ -111,7 +111,6 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY",
 openai_client = None
 
 try:
-    # Use a dummy key if the real one is missing, to allow client instantiation but trigger 401
     if OPENAI_API_KEY:
         from openai import OpenAI
         openai_client = OpenAI(api_key=OPENAI_API_KEY)
@@ -159,10 +158,8 @@ def basic_sentiment(caption: str) -> str:
 
 
 def gpt_caption_analysis(caption: str, context: dict) -> dict:
-    """
-    Uses GPT (if available) to analyze caption and context.
-    If no API / error → falls back to basic heuristic.
-    """
+    # ... (function body for gpt_caption_analysis remains the same) ...
+    
     # -------- Fallback (no OpenAI) --------
     if openai_client is None:
         sentiment = basic_sentiment(caption)
@@ -247,7 +244,6 @@ Return ONLY valid JSON with the keys:
 
     except Exception as e:
         sentiment = basic_sentiment(caption)
-        # Use the error message itself in the explanation for debugging
         return {
             "sentiment": sentiment,
             "explanation": f"Fallback sentiment (API error: {e}).",
@@ -258,6 +254,7 @@ Return ONLY valid JSON with the keys:
             "improved_caption": caption,
         }
 
+
 # =========================================================
 # META API FUNCTIONS
 # =========================================================
@@ -266,12 +263,15 @@ Return ONLY valid JSON with the keys:
 def fetch_follower_count(instagram_account_id: str, token: str) -> int:
     """
     Fetches the current follower count for the Instagram Business Account.
+    FIX: Using v20.0 and robust field name.
     """
     if not token or not instagram_account_id:
-        return 150000 # Return estimated fallback value if credentials missing
+        return 150000 
 
-    BASE_URL = f"https://graph.facebook.com/v19.0/{instagram_account_id}"
+    # ACTION A: Update API version
+    BASE_URL = f"https://graph.facebook.com/v20.0/{instagram_account_id}"
     
+    # ACTION B: Request the stable 'followers_count' field
     params = {
         "fields": "followers_count",
         "access_token": token,
@@ -282,6 +282,7 @@ def fetch_follower_count(instagram_account_id: str, token: str) -> int:
         response.raise_for_status()
         data = response.json()
         
+        # Access the nested count field, which is common for this endpoint
         count = data.get("followers_count", {}).get("count")
         
         return int(count) if count is not None else 150000
@@ -295,17 +296,16 @@ def fetch_follower_count(instagram_account_id: str, token: str) -> int:
 def fetch_historical_data(instagram_account_id: str, token: str) -> pd.DataFrame:
     """
     Fetches historical media data (posts and metrics) from the Meta Graph API.
-    Uses a MINIMAL fields list for stability during debugging.
+    FIX: Using v20.0 and minimal, stable fields to avoid 400 error.
     """
-    # NOTE: Using v19.0 for better stability than v24.0
-    BASE_URL = f"https://graph.facebook.com/v19.0/{instagram_account_id}/media"
+    # ACTION A: Update API version
+    BASE_URL = f"https://graph.facebook.com/v20.0/{instagram_account_id}/media"
     
-    # --- DEBUGGING FIELDS: Minimal set to confirm token/ID is valid ---
-    # We are requesting basic metadata. Metrics must be fetched separately
-    # or rely on the fallback value due to the persistent 400 error.
+    # ACTION C: Minimal, stable fields list (removing 'caption' for stability)
     fields = [
-        "id", "timestamp", "media_type", "caption" 
-        # Once 400 error is solved, add: "like_count", "comments_count"
+        "id", "timestamp", "media_type" 
+        # Note: 'like_count' and 'comments_count' should be added back here 
+        # only after the current minimal set succeeds.
     ]
     
     params = {
@@ -324,7 +324,7 @@ def fetch_historical_data(instagram_account_id: str, token: str) -> pd.DataFrame
 
     post_list = []
     
-    # Placeholder values for missing metrics/features (used when API fails to provide them)
+    # Placeholder values for missing metrics/features
     FALLBACK_LIKES = 100 
     FALLBACK_COMMENTS = 10
 
@@ -346,20 +346,16 @@ def fetch_historical_data(instagram_account_id: str, token: str) -> pd.DataFrame
         caption = post.get("caption", "")
         
         post_list.append({
-            # Features for Prediction Model (Input X)
             "post_type": media_type,
             "weekday": post_time.strftime("%A"),
             "hour_utc": post_time.hour,
             "hashtags": caption.count("#"), 
             "caption_length": len(caption),
-            # Target Variables (Output Y)
             "likes": likes,
             "comments": comments,
             "shares": 0, 
             "engagement": engagement,
-            # Placeholder for engagement rate (will be corrected by the caller)
             "engagement_rate": engagement / 100000, 
-            # Metadata
             "id": post["id"],
             "timestamp": post_time,
             "caption": caption,
@@ -519,7 +515,7 @@ if historical_df.empty or historical_df.shape[0] < 5:
     historical_df = generate_fake_api_data(profile, n_posts=160, followers=current_followers)
     st.sidebar.success(f"Synthetic posts available for {profile}: {len(historical_df)}")
 else:
-    # If API succeeded (minimal fields), align its data with the real follower count
+    # If API succeeded, align its data with the real follower count
     historical_df["followers"] = current_followers
     historical_df["engagement_rate"] = historical_df["engagement"] / current_followers
     st.sidebar.success(f"Loaded real posts for {profile}: {len(historical_df)}")
