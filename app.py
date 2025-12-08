@@ -515,7 +515,7 @@ if META_TOKEN and INSTAGRAM_ID:
 # 3. Fallback Check and Data Alignment
 if historical_df.empty or historical_df.shape[0] < 5:
     st.sidebar.error("API failed or returned insufficient data. Generating synthetic data.")
-    historical_df = generate_fake_api_data(profile, n_posts=160, followers=current_followers)
+    historical_df = generate_fake_api_data(profile, n_posts=100000, followers=current_followers)
     st.sidebar.success(f"Synthetic posts available for {profile}: {len(historical_df)}")
 else:
     # If API succeeded, align its data with the real follower count
