@@ -556,7 +556,7 @@ else:
     # If API succeeded, align its data with the real follower count
     historical_df["followers"] = current_followers
     historical_df["engagement_rate"] = historical_df["engagement"] / current_followers
-    st.sidebar.success(f"Loaded real posts for {profile}: {len(historical_df)}")
+    st.sidebar.success(f"Loaded posts for {profile}: {len(historical_df)}")
 
 # Train engagement model
 eng_model, eng_feature_columns = train_engagement_model(historical_df)
