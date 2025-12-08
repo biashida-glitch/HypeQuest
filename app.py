@@ -310,7 +310,7 @@ def fetch_historical_data(instagram_account_id: str, token: str) -> pd.DataFrame
     params = {
         "fields": ",".join(fields),
         "access_token": token,
-        "limit": 100
+        "limit": 100000
     }
 
     try:
