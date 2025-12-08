@@ -104,16 +104,16 @@ st.markdown("""
 
 # Load Meta API Credentials from secrets
 META_TOKEN = st.secrets.get("META_ACCESS_TOKEN", None)
-INSTAGRAM_ID = st.secrets.get("INSTAGRAM_ACCOUNT_ID", None)
+INSTAGRAM_ID = st.secrets.get("INSTAGRAM_ACCOUNT_ID", None) 
 
 # OpenAI client (optional) – works with new SDK (>=1.0)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY", None)
 openai_client = None
 
 try:
+    # Use a dummy key if the real one is missing, to allow client instantiation but trigger 401
     if OPENAI_API_KEY:
         from openai import OpenAI
-
         openai_client = OpenAI(api_key=OPENAI_API_KEY)
 except Exception:
     openai_client = None
@@ -234,7 +234,6 @@ Return ONLY valid JSON with the keys:
         try:
             parsed = json.loads(raw_content)
         except json.JSONDecodeError:
-            # If the model adds extra text, try to extract JSON portion
             start = raw_content.find("{")
             end = raw_content.rfind("}")
             parsed = json.loads(raw_content[start : end + 1])
@@ -248,6 +247,7 @@ Return ONLY valid JSON with the keys:
 
     except Exception as e:
         sentiment = basic_sentiment(caption)
+        # Use the error message itself in the explanation for debugging
         return {
             "sentiment": sentiment,
             "explanation": f"Fallback sentiment (API error: {e}).",
@@ -259,8 +259,37 @@ Return ONLY valid JSON with the keys:
         }
 
 # =========================================================
-# REAL API DATA FETCHING (Instagram) - DEBUGGING VERSION
+# META API FUNCTIONS
 # =========================================================
+
+@st.cache_data
+def fetch_follower_count(instagram_account_id: str, token: str) -> int:
+    """
+    Fetches the current follower count for the Instagram Business Account.
+    """
+    if not token or not instagram_account_id:
+        return 150000 # Return estimated fallback value if credentials missing
+
+    BASE_URL = f"https://graph.facebook.com/v19.0/{instagram_account_id}"
+    
+    params = {
+        "fields": "followers_count",
+        "access_token": token,
+    }
+    
+    try:
+        response = requests.get(BASE_URL, params=params)
+        response.raise_for_status()
+        data = response.json()
+        
+        count = data.get("followers_count", {}).get("count")
+        
+        return int(count) if count is not None else 150000
+        
+    except requests.exceptions.RequestException as e:
+        st.sidebar.error(f"Follower API Error: {e}. Using estimated followers.")
+        return 150000 
+
 
 @st.cache_data
 def fetch_historical_data(instagram_account_id: str, token: str) -> pd.DataFrame:
@@ -268,13 +297,15 @@ def fetch_historical_data(instagram_account_id: str, token: str) -> pd.DataFrame
     Fetches historical media data (posts and metrics) from the Meta Graph API.
     Uses a MINIMAL fields list for stability during debugging.
     """
-    # 1. Define the API endpoint and fields (metrics) you need
-    # NOTE: Temporarily changed version to v19.0 for better stability
+    # NOTE: Using v19.0 for better stability than v24.0
     BASE_URL = f"https://graph.facebook.com/v19.0/{instagram_account_id}/media"
     
     # --- DEBUGGING FIELDS: Minimal set to confirm token/ID is valid ---
+    # We are requesting basic metadata. Metrics must be fetched separately
+    # or rely on the fallback value due to the persistent 400 error.
     fields = [
         "id", "timestamp", "media_type", "caption" 
+        # Once 400 error is solved, add: "like_count", "comments_count"
     ]
     
     params = {
@@ -283,29 +314,26 @@ def fetch_historical_data(instagram_account_id: str, token: str) -> pd.DataFrame
         "limit": 100
     }
     
-    # 2. Make the API request
     try:
         response = requests.get(BASE_URL, params=params)
-        response.raise_for_status() # Raise an HTTPError for bad responses (4xx or 5xx)
+        response.raise_for_status() 
         data = response.json()
     except requests.exceptions.RequestException as e:
         st.sidebar.error(f"API Request Error (Minimal Fields): {e}")
         return pd.DataFrame()
 
-    # 3. Process the data and transform it into a DataFrame
     post_list = []
     
-    # Placeholder values for missing metrics/features (since we are using minimal fields)
+    # Placeholder values for missing metrics/features (used when API fails to provide them)
     FALLBACK_LIKES = 100 
     FALLBACK_COMMENTS = 10
 
     for post in data.get("data", []):
-        # Calculate engagement using available metrics or fallback values
+        
         likes = post.get("like_count", FALLBACK_LIKES)
         comments = post.get("comments_count", FALLBACK_COMMENTS)
         engagement = likes + comments 
 
-        # Extract contextual features
         media_type = post.get("media_type", "IMAGE").lower()
         if media_type == 'carousel_album':
              media_type = 'carousel'
@@ -313,7 +341,7 @@ def fetch_historical_data(instagram_account_id: str, token: str) -> pd.DataFrame
         try:
             post_time = datetime.fromisoformat(post["timestamp"].replace("+0000", "+00:00"))
         except Exception:
-            continue # Skip post if timestamp is invalid
+            continue
 
         caption = post.get("caption", "")
         
@@ -327,27 +355,24 @@ def fetch_historical_data(instagram_account_id: str, token: str) -> pd.DataFrame
             # Target Variables (Output Y)
             "likes": likes,
             "comments": comments,
-            "shares": 0, # Cannot be reliably fetched, set to 0
+            "shares": 0, 
             "engagement": engagement,
+            # Placeholder for engagement rate (will be corrected by the caller)
+            "engagement_rate": engagement / 100000, 
             # Metadata
             "id": post["id"],
             "timestamp": post_time,
             "caption": caption,
         })
     
-    df = pd.DataFrame(post_list)
-    
-    # Add engagement rate (placeholder until we fetch follower count)
-    df['engagement_rate'] = df['engagement'] / 100000 
-    
-    return df
+    return pd.DataFrame(post_list)
 
 # =========================================================
 # FAKE API DATA FALLBACK (Simplified and Aligned)
 # =========================================================
 
 
-def generate_fake_api_data(profile_handle: str, n_posts: int = 160) -> pd.DataFrame:
+def generate_fake_api_data(profile_handle: str, n_posts: int = 160, followers: int = 150000) -> pd.DataFrame:
     """
     Creates a synthetic dataset for a given Instagram profile,
     ALIGNED to the real API features (no topic/month).
@@ -359,8 +384,6 @@ def generate_fake_api_data(profile_handle: str, n_posts: int = 160) -> pd.DataFr
         "Monday", "Tuesday", "Wednesday", "Thursday",
         "Friday", "Saturday", "Sunday",
     ]
-
-    followers = int(rng.integers(50_000, 200_000))
 
     rows = []
     for _ in range(n_posts):
@@ -419,12 +442,11 @@ def generate_fake_api_data(profile_handle: str, n_posts: int = 160) -> pd.DataFr
     return pd.DataFrame(rows)
 
 # =========================================================
-# Model Training (Modified for simplified features)
+# Model Training
 # =========================================================
 
 
 def train_engagement_model(df: pd.DataFrame):
-    # Only use features that are available from the Meta API (or derived from caption)
     feature_cols = [
         "post_type",
         "weekday",
@@ -471,39 +493,39 @@ st.markdown("---")
 # Streamlit UI & Data Loading Logic
 # =========================================================
 
-# Initialise caption input in session_state
 if "caption_input" not in st.session_state:
     st.session_state["caption_input"] = ""
 
-# Sidebar – profile & upload
 st.sidebar.header("Profile & data")
 
 available_profiles = ["@pubg", "@playinzoi", "@hypequest"]
 profile = st.sidebar.selectbox("Instagram profile", available_profiles)
 
-# --- API FIRST, FALLBACK SECOND (Debugging Fix Applied) ---
+# --- Data Loading Logic ---
 historical_df = pd.DataFrame() 
 
-# TEMPORARY FIX: Force fallback to confirm if API call is causing the crash
-if False: 
+# 1. Fetch Follower Count (Real or Fallback)
+current_followers = fetch_follower_count(INSTAGRAM_ID, META_TOKEN)
+st.sidebar.info(f"Followers for {profile}: {current_followers:,}")
+
+# 2. Attempt to load real data
+if META_TOKEN and INSTAGRAM_ID: 
     with st.spinner("Attempting to load real data from Meta API..."):
         historical_df = fetch_historical_data(INSTAGRAM_ID, META_TOKEN)
-else:
-    st.sidebar.warning("API fetching disabled for debugging. Forcing synthetic data.")
 
-
+# 3. Fallback Check and Data Alignment
 if historical_df.empty or historical_df.shape[0] < 5:
-    # If the API was disabled (or failed) and returned no data, use the fake generator
     st.sidebar.error("API failed or returned insufficient data. Generating synthetic data.")
-    historical_df = generate_fake_api_data(profile, n_posts=160)
+    historical_df = generate_fake_api_data(profile, n_posts=160, followers=current_followers)
     st.sidebar.success(f"Synthetic posts available for {profile}: {len(historical_df)}")
 else:
-    # Estimate followers from historical data (only if API successfully ran)
-    followers_est = historical_df["engagement"].iloc[0] / historical_df["engagement_rate"].iloc[0] if not historical_df.empty and 'engagement_rate' in historical_df.columns else 100000
-    historical_df["followers"] = followers_est
+    # If API succeeded (minimal fields), align its data with the real follower count
+    historical_df["followers"] = current_followers
+    historical_df["engagement_rate"] = historical_df["engagement"] / current_followers
     st.sidebar.success(f"Loaded real posts for {profile}: {len(historical_df)}")
-# --- END API/FALLBACK ---
 
+# Train engagement model
+eng_model, eng_feature_columns = train_engagement_model(historical_df)
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("Load post dataset (optional)")
@@ -527,9 +549,6 @@ if uploaded is not None:
     except Exception as e:
         st.sidebar.error(f"Error reading file: {e}")
 
-# Train engagement model
-eng_model, eng_feature_columns = train_engagement_model(historical_df)
-
 # =========================================================
 # Plan new post
 # =========================================================
@@ -549,8 +568,6 @@ with col_left:
         ],
     )
     hashtags = st.slider("Number of hashtags", 0, 15, 3)
-
-# Removed: Post topic and Month selectors
 
 st.markdown("### ✍️ Caption")
 
@@ -576,7 +593,6 @@ current_inputs = dict(
     profile=profile,
 )
 
-# If we have previous result and inputs changed → drop result
 if "last_result" in st.session_state:
     last_inputs = st.session_state["last_result"].get("inputs", {})
     if last_inputs != current_inputs:
@@ -619,8 +635,8 @@ if st.button("✨ Evaluate caption & predict"):
         )
         predicted_eng_rate = float(eng_model.predict(new_X)[0])
 
-        followers = int(historical_df["followers"].iloc[0] if not historical_df.empty else 100000)
-        predicted_interactions = int(predicted_eng_rate * followers)
+        # Use the current_followers value for prediction
+        predicted_interactions = int(predicted_eng_rate * current_followers)
 
         st.session_state["last_result"] = dict(
             sentiment_label=sentiment_label,
@@ -629,7 +645,7 @@ if st.button("✨ Evaluate caption & predict"):
             improved_caption=improved_caption,
             predicted_interactions=predicted_interactions,
             predicted_eng_rate=predicted_eng_rate,
-            followers=followers,
+            followers=current_followers,
             inputs=current_inputs,
         )
 
