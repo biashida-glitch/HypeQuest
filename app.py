@@ -6,6 +6,8 @@ import pandas as pd
 import streamlit as st
 from sklearn.tree import DecisionTreeRegressor
 from sklearn.model_selection import train_test_split
+st.set_page_config(layout="wide")
+
 
 # =========================================================
 # CONFIG GERAL DA PÁGINA
