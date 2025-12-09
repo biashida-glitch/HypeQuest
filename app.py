@@ -283,7 +283,7 @@ Return ONLY valid JSON with the keys:
 # META API FUNCTIONS
 # =========================================================
 
-@st.cache_data(ttl=600)  # atualiza automaticamente a cada 10 minutos
+@st.cache_data(ttl=600, show_spinner=False)  # atualiza automaticamente a cada 10 minutos
 def fetch_follower_count(instagram_account_id: str, token: str) -> int:
     """
     Fetches the current follower count for the Instagram Business Account.
@@ -317,7 +317,7 @@ def fetch_follower_count(instagram_account_id: str, token: str) -> int:
         return 150000
 
 
-@st.cache_data(ttl=600)  # idem: posts atualizados periodicamente
+@st.cache_data(ttl=600, show_spinner=False)  # idem: posts atualizados periodicamente
 def fetch_historical_data(instagram_account_id: str, token: str) -> pd.DataFrame:
     """
     Fetches historical media data (posts and metrics) from the Meta Graph API.
@@ -464,6 +464,57 @@ def generate_fake_api_data(profile_handle: str, n_posts: int = 160, followers: i
     return pd.DataFrame(rows)
 
 # =========================================================
+# Engagement-level helpers
+# =========================================================
+
+def compute_engagement_thresholds(df: pd.DataFrame) -> dict:
+    """
+    Calcula pontos de corte (baixo / médio / alto) a partir do histórico
+    do próprio perfil (tercis de engagement_rate).
+    """
+    if df.empty or "engagement_rate" not in df.columns:
+        return {"low": 0.0, "high": 0.0}
+
+    low = float(df["engagement_rate"].quantile(0.33))
+    high = float(df["engagement_rate"].quantile(0.66))
+    return {"low": low, "high": high}
+
+
+def classify_engagement_level(er: float, thresholds: dict):
+    """
+    Classifica uma taxa de engajamento prevista como LOW / MEDIUM / HIGH
+    com base nos tercis do perfil.
+    """
+    low = thresholds.get("low", 0.0)
+    high = thresholds.get("high", 0.0)
+
+    if high <= 0:
+        return (
+            "UNKNOWN",
+            "Not enough data to classify engagement for this profile yet.",
+            "#6b7280",
+        )
+
+    if er < low:
+        return (
+            "LOW",
+            "Below the typical range for this profile (bottom ~1/3 of historical posts).",
+            "#ef4444",
+        )
+    elif er < high:
+        return (
+            "MEDIUM",
+            "Within the usual range for this profile (middle ~1/3 of historical posts).",
+            "#eab308",
+        )
+    else:
+        return (
+            "HIGH",
+            "Above the usual range for this profile (top ~1/3 of historical posts).",
+            "#22c55e",
+        )
+
+# =========================================================
 # Model Training
 # =========================================================
 
@@ -568,6 +619,9 @@ else:
     historical_df["followers"] = current_followers
     historical_df["engagement_rate"] = historical_df["engagement"] / current_followers
     st.sidebar.success(f"Loaded real posts for {profile}: {len(historical_df)}")
+
+# 4. Thresholds de engajamento (baixo/médio/alto) por perfil
+engagement_thresholds = compute_engagement_thresholds(historical_df)
 
 # Botão para forçar atualização imediata (limpa cache e reroda)
 if cfg["use_real_api"] and META_TOKEN and cfg["instagram_id"]:
@@ -735,6 +789,11 @@ if "last_result" in st.session_state:
 
     st.write(res["sentiment_explanation"])
 
+    # Classificar nível de engajamento previsto
+    eng_level, eng_level_msg, eng_level_color = classify_engagement_level(
+        res["predicted_eng_rate"], engagement_thresholds
+    )
+
     st.markdown("")
     st.markdown(
         f"""
@@ -749,6 +808,22 @@ if "last_result" in st.session_state:
             </div>
             <div style="font-size:12px;color:#0369a1;margin-top:4px;">
                 Engagement rate: {res['predicted_eng_rate']*100:.2f}% for ~{res['followers']:,} followers.
+            </div>
+            <div style="margin-top:10px;">
+                <div style="display:inline-flex;align-items:center;
+                            padding:4px 10px;border-radius:999px;
+                            background-color:{eng_level_color}22;
+                            border:1px solid {eng_level_color};
+                            font-size:12px;font-weight:600;
+                            color:{eng_level_color};">
+                    <span style="width:8px;height:8px;border-radius:999px;
+                                 background-color:{eng_level_color};
+                                 display:inline-block;margin-right:8px;"></span>
+                    <span>Engagement level: {eng_level}</span>
+                </div>
+                <div style="font-size:11px;color:#0369a1;margin-top:4px;">
+                    {eng_level_msg}
+                </div>
             </div>
         </div>
         """,
