@@ -21,7 +21,7 @@ st.set_page_config(
 )
 
 # ------------------------------
-# CSS ESTILO HYPE QUEST (fontes mais padronizadas)
+# CSS ESTILO HYPE QUEST (fontes padronizadas)
 # ------------------------------
 st.markdown("""
 <style>
@@ -38,7 +38,7 @@ st.markdown("""
 
     .hype-title {
         font-family: monospace;
-        font-size: 34px;
+        font-size: 32px;
         font-weight: 900;
         letter-spacing: 4px;
         color: #1C0A4A;
@@ -94,29 +94,27 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =========================================================
-# ESTADO INICIAL (CAPTION)
+# STATE INICIAL
 # =========================================================
 
-# Estado que controla o texto padrão do campo de caption
-if "caption_default" not in st.session_state:
-    st.session_state["caption_default"] = ""
+if "caption_input" not in st.session_state:
+    st.session_state["caption_input"] = ""
 
 # =========================================================
-# LOGO HYPEQUEST
+# LOGO NA SIDEBAR
 # =========================================================
 
-LOGO_PATH = "HypeLogo(1).png"       # nome que você indicou
-KV_IMAGE_PATH = "hypequest_kv.png"  # opcional
+LOGO_PATH = "HypeLogo(1).png"  # nome do arquivo que você mencionou
 
-try:
-    st.image(LOGO_PATH, width=170)
-except Exception:
-    pass
+with st.sidebar:
+    try:
+        st.image(LOGO_PATH, use_column_width=True)
+    except Exception:
+        pass
 
-try:
-    st.image(KV_IMAGE_PATH, use_column_width=True)
-except Exception:
-    pass
+# =========================================================
+# HEADER PRINCIPAL
+# =========================================================
 
 st.markdown("<div class='hype-title'>HYPE QUEST</div>", unsafe_allow_html=True)
 st.markdown(
@@ -354,7 +352,7 @@ def fetch_historical_data(instagram_account_id: str, token: str) -> pd.DataFrame
         "fields": ",".join(fields),
         "access_token": token,
         "limit": 100000,
-    }
+    ]
 
     try:
         response = requests.get(BASE_URL, params=params)
@@ -654,13 +652,10 @@ st.markdown("### ✍️ Caption")
 
 caption_text = st.text_area(
     "Caption text",
-    value=st.session_state["caption_default"],
     key="caption_input",
     placeholder="Write your caption here...",
     height=120,
 )
-# mantém o estado sempre sincronizado com o que o usuário digitou
-st.session_state["caption_default"] = caption_text
 
 caption_length = len(caption_text or "")
 st.caption(f"Caption length: {caption_length} characters (used as a feature).")
@@ -835,7 +830,7 @@ if "last_result" in st.session_state:
 
     st.info(
         "This suggestion is generated from your original caption. "
-        "Click the button below to apply it to the caption field above and then re-run the evaluation."
+        "You can copy & paste it into the caption editor above and tweak it as you like."
     )
 
     st.text_area(
@@ -844,12 +839,6 @@ if "last_result" in st.session_state:
         height=90,
         key="suggested_caption_display",
     )
-
-    if st.button("📋 Use this suggested caption"):
-        # Atualiza apenas o texto padrão usado pelo campo principal
-        st.session_state["caption_default"] = res["improved_caption"]
-        st.success("Suggested caption applied to the editor above. Now you can evaluate again.")
-        st.rerun()
 
 st.markdown("---")
 st.caption(
