@@ -25,6 +25,14 @@ st.set_page_config(
 # ------------------------------
 st.markdown("""
 <style>
+    /* Fonte base menor e uniforme */
+    html, body {
+        font-size: 14px;
+    }
+    body, p, span, div, section {
+        font-size: 14px;
+    }
+
     .main {
         background-color: #B7E3FF;
     }
@@ -33,12 +41,11 @@ st.markdown("""
         padding-top: 1rem;
         max-width: 1100px;
         margin: 0 auto;
-        font-size: 14px;
     }
 
     .hype-title {
         font-family: monospace;
-        font-size: 32px;
+        font-size: 30px;
         font-weight: 900;
         letter-spacing: 4px;
         color: #1C0A4A;
@@ -76,7 +83,7 @@ st.markdown("""
         background: linear-gradient(180deg, #FFDD55 0%, #FFB800 70%);
         color: #1C0A4A;
         font-weight: bold;
-        font-size: 16px;
+        font-size: 15px;
         padding: 6px 22px;
         box-shadow: 0px 4px 0px #D98F00;
     }
@@ -108,7 +115,7 @@ LOGO_PATH = "HypeLogo(1).png"  # arquivo do logo
 
 with st.sidebar:
     try:
-        st.image(LOGO_PATH, use_column_width=True)
+        st.image(LOGO_PATH, width=130)  # logo menor
     except Exception:
         pass
 
@@ -394,7 +401,7 @@ def fetch_historical_data(instagram_account_id: str, token: str) -> pd.DataFrame
             "likes": likes,
             "comments": comments,
             "shares": 0,
-            "engagement": engagement,              # likes + comments
+            "engagement": engagement,
             "engagement_rate": engagement / 100000,  # placeholder
             "id": post["id"],
             "timestamp": post_time,
@@ -501,19 +508,19 @@ def classify_engagement_level(er: float, thresholds: dict):
     if er < low:
         return (
             "LOW",
-            "Below the typical range for this profile.",
+            "Below the typical range for this profile (bottom ~1/3 of historical posts).",
             "#ef4444",
         )
     elif er < high:
         return (
             "MEDIUM",
-            "Within the usual range for this profile.",
+            "Within the usual range for this profile (middle ~1/3 of historical posts).",
             "#eab308",
         )
     else:
         return (
             "HIGH",
-            "Above the usual range for this profile.",
+            "Above the usual range for this profile (top ~1/3 of historical posts).",
             "#22c55e",
         )
 
