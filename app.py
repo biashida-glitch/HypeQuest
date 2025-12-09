@@ -498,19 +498,19 @@ def classify_engagement_level(er: float, thresholds: dict):
     if er < low:
         return (
             "LOW",
-            "Below the typical range for this profile (bottom ~1/3 of historical posts).",
+            "Below the typical range for this profile",
             "#ef4444",
         )
     elif er < high:
         return (
             "MEDIUM",
-            "Within the usual range for this profile (middle ~1/3 of historical posts).",
+            "Within the usual range for this profile",
             "#eab308",
         )
     else:
         return (
             "HIGH",
-            "Above the usual range for this profile (top ~1/3 of historical posts).",
+            "Above the usual range for this profile",
             "#22c55e",
         )
 
