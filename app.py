@@ -574,7 +574,7 @@ if cfg["use_real_api"] and META_TOKEN and cfg["instagram_id"]:
     if st.sidebar.button("🔄 Refresh Instagram data"):
         fetch_follower_count.clear()
         fetch_historical_data.clear()
-        st.experimental_rerun()
+        st.rerun()
 
 # Train engagement model
 eng_model, eng_feature_columns = train_engagement_model(historical_df)
@@ -804,7 +804,7 @@ if "last_result" in st.session_state:
         except Exception:
             pass
         st.success("Suggested caption applied to the editor above. You can edit it before posting.")
-        st.experimental_rerun()
+        st.rerun()
 
 st.markdown("---")
 st.caption(
