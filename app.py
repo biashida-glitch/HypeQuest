@@ -100,6 +100,40 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =========================================================
+# STATE INICIAL
+# =========================================================
+
+if "caption_input" not in st.session_state:
+    st.session_state["caption_input"] = ""
+
+# Flag para sabermos se o caption foi atualizado via botão de sugestão
+if "apply_suggested" not in st.session_state:
+    st.session_state["apply_suggested"] = False
+
+# =========================================================
+# LOGO HYPEQUEST
+# =========================================================
+
+LOGO_PATH = "hypequest_logo.png"  # coloque este arquivo na mesma pasta do app
+KV_IMAGE_PATH = "hypequest_kv.png"  # opcional
+
+try:
+    st.image(LOGO_PATH, width=180)
+except Exception:
+    pass
+
+try:
+    st.image(KV_IMAGE_PATH, use_column_width=True)
+except Exception:
+    pass
+
+st.markdown("<div class='hype-title'>HYPE QUEST</div>", unsafe_allow_html=True)
+st.markdown(
+    "<div class='hype-subtitle'>Instagram Engagement & Sentiment Prediction</div>",
+    unsafe_allow_html=True,
+)
+
+# =========================================================
 # API Credentials and Client Setup
 # =========================================================
 
@@ -147,6 +181,12 @@ elif not OPENAI_API_KEY:
     IA_STATUS = "⚠️ Generative AI disabled (no OPENAI_API_KEY found in env or secrets)"
 else:
     IA_STATUS = f"⚠️ Generative AI disabled (OpenAI SDK error: {openai_import_error})"
+
+st.markdown(
+    f"<div class='hype-status'>{IA_STATUS}</div>",
+    unsafe_allow_html=True,
+)
+st.markdown("---")
 
 # =========================================================
 # Simple keyword sentiment fallback
@@ -283,7 +323,7 @@ Return ONLY valid JSON with the keys:
 # META API FUNCTIONS
 # =========================================================
 
-@st.cache_data(ttl=600, show_spinner=False)  # atualiza automaticamente a cada 10 minutos
+@st.cache_data(ttl=600, show_spinner=False)
 def fetch_follower_count(instagram_account_id: str, token: str) -> int:
     """
     Fetches the current follower count for the Instagram Business Account.
@@ -317,12 +357,10 @@ def fetch_follower_count(instagram_account_id: str, token: str) -> int:
         return 150000
 
 
-@st.cache_data(ttl=600, show_spinner=False)  # idem: posts atualizados periodicamente
+@st.cache_data(ttl=600, show_spinner=False)
 def fetch_historical_data(instagram_account_id: str, token: str) -> pd.DataFrame:
     """
     Fetches historical media data (posts and metrics) from the Meta Graph API.
-    Uses v19.0 and requests caption + like_count + comments_count so
-    engagement is based on real interactions (likes + comments).
     """
     BASE_URL = f"https://graph.facebook.com/v19.0/{instagram_account_id}/media"
 
@@ -380,7 +418,7 @@ def fetch_historical_data(instagram_account_id: str, token: str) -> pd.DataFrame
             "likes": likes,
             "comments": comments,
             "shares": 0,
-            "engagement": engagement,              # interactions = likes + comments
+            "engagement": engagement,              # likes + comments
             "engagement_rate": engagement / 100000,  # placeholder, será sobrescrito
             "id": post["id"],
             "timestamp": post_time,
@@ -390,15 +428,11 @@ def fetch_historical_data(instagram_account_id: str, token: str) -> pd.DataFrame
     return pd.DataFrame(post_list)
 
 # =========================================================
-# FAKE API DATA FALLBACK (Simplified and Aligned)
+# FAKE API DATA FALLBACK
 # =========================================================
 
 
 def generate_fake_api_data(profile_handle: str, n_posts: int = 160, followers: int = 150000) -> pd.DataFrame:
-    """
-    Creates a synthetic dataset for a given Instagram profile,
-    ALIGNED to the real API features.
-    """
     rng = np.random.default_rng(abs(hash(profile_handle)) % (2**32))
 
     post_types = ["image", "video", "reels", "carousel"]
@@ -469,8 +503,7 @@ def generate_fake_api_data(profile_handle: str, n_posts: int = 160, followers: i
 
 def compute_engagement_thresholds(df: pd.DataFrame) -> dict:
     """
-    Calcula pontos de corte (baixo / médio / alto) a partir do histórico
-    do próprio perfil (tercis de engagement_rate).
+    Pontos de corte (baixo / médio / alto) a partir do histórico do perfil.
     """
     if df.empty or "engagement_rate" not in df.columns:
         return {"low": 0.0, "high": 0.0}
@@ -481,10 +514,6 @@ def compute_engagement_thresholds(df: pd.DataFrame) -> dict:
 
 
 def classify_engagement_level(er: float, thresholds: dict):
-    """
-    Classifica uma taxa de engajamento prevista como LOW / MEDIUM / HIGH
-    com base nos tercis do perfil.
-    """
     low = thresholds.get("low", 0.0)
     high = thresholds.get("high", 0.0)
 
@@ -498,19 +527,19 @@ def classify_engagement_level(er: float, thresholds: dict):
     if er < low:
         return (
             "LOW",
-            "Below the typical range for this profile",
+            "Below the typical range for this profile (bottom ~1/3 of historical posts).",
             "#ef4444",
         )
     elif er < high:
         return (
             "MEDIUM",
-            "Within the usual range for this profile",
+            "Within the usual range for this profile (middle ~1/3 of historical posts).",
             "#eab308",
         )
     else:
         return (
             "HIGH",
-            "Above the usual range for this profile",
+            "Above the usual range for this profile (top ~1/3 of historical posts).",
             "#22c55e",
         )
 
@@ -541,49 +570,22 @@ def train_engagement_model(df: pd.DataFrame):
 
 
 # =========================================================
-# HEADER HYPE QUEST (KV + TÍTULO)
-# =========================================================
-
-KV_IMAGE_PATH = "hypequest_kv.png"
-
-try:
-    st.image(KV_IMAGE_PATH, use_column_width=True)
-except Exception:
-    pass
-
-st.markdown("<div class='hype-title'>HYPE QUEST</div>", unsafe_allow_html=True)
-st.markdown(
-    "<div class='hype-subtitle'>Instagram Engagement & Sentiment Prediction</div>",
-    unsafe_allow_html=True,
-)
-st.markdown(
-    f"<div class='hype-status'>{IA_STATUS}</div>",
-    unsafe_allow_html=True,
-)
-st.markdown("---")
-
-# =========================================================
 # Streamlit UI & Data Loading Logic
 # =========================================================
 
-if "caption_input" not in st.session_state:
-    st.session_state["caption_input"] = ""
-
 st.sidebar.header("Profile & data")
 
-# Configuração de perfis (pronto para futuras APIs)
 PROFILE_CONFIG = {
     "@pubgbattlegrounds_mena": {
         "use_real_api": True,
-        "instagram_id": INSTAGRAM_ID,        # vindo do secrets
+        "instagram_id": INSTAGRAM_ID,
         "default_followers": 150_000,
     },
     "@yourprofile": {
-        "use_real_api": False,               # apenas fake data por enquanto
+        "use_real_api": False,
         "instagram_id": None,
         "default_followers": 10_000,
     },
-    # TODO: adicionar novos perfis aqui no futuro
 }
 
 available_profiles = list(PROFILE_CONFIG.keys())
@@ -620,17 +622,17 @@ else:
     historical_df["engagement_rate"] = historical_df["engagement"] / current_followers
     st.sidebar.success(f"Loaded real posts for {profile}: {len(historical_df)}")
 
-# 4. Thresholds de engajamento (baixo/médio/alto) por perfil
+# 4. Thresholds de engajamento por perfil
 engagement_thresholds = compute_engagement_thresholds(historical_df)
 
-# Botão para forçar atualização imediata (limpa cache e reroda)
+# Botão para atualizar cache + re-treinar
 if cfg["use_real_api"] and META_TOKEN and cfg["instagram_id"]:
     if st.sidebar.button("🔄 Refresh Instagram data"):
         fetch_follower_count.clear()
         fetch_historical_data.clear()
         st.rerun()
 
-# Train engagement model
+# Treina modelo para o perfil atual
 eng_model, eng_feature_columns = train_engagement_model(historical_df)
 
 st.sidebar.markdown("---")
@@ -687,9 +689,7 @@ caption_text = st.text_area(
 caption_length = len(caption_text or "")
 st.caption(f"Caption length: {caption_length} characters (used as a feature).")
 
-# ---------------------------------------------------------
-# Build current input snapshot (for invalidating results)
-# ---------------------------------------------------------
+# Snapshot dos inputs para invalidar resultado quando usuário altera algo
 current_inputs = dict(
     post_type=post_type,
     hour=hour,
@@ -701,8 +701,12 @@ current_inputs = dict(
 
 if "last_result" in st.session_state:
     last_inputs = st.session_state["last_result"].get("inputs", {})
-    if last_inputs != current_inputs:
+    # Se o usuário mudou algo manualmente, apagamos o resultado anterior.
+    # Se a mudança veio do botão "Use this suggested caption", mantemos.
+    if last_inputs != current_inputs and not st.session_state.get("apply_suggested", False):
         del st.session_state["last_result"]
+    # Reseta o flag depois de usar
+    st.session_state["apply_suggested"] = False
 
 # =========================================================
 # Button – Evaluate
@@ -710,7 +714,6 @@ if "last_result" in st.session_state:
 
 if st.button("✨ Evaluate caption & predict"):
     with st.spinner("Consulting the HypeQuest crystal ball... 🔮"):
-        # Generative AI or fallback
         context = {
             "post_type": post_type,
             "weekday": weekday,
@@ -724,7 +727,6 @@ if st.button("✨ Evaluate caption & predict"):
         suggestions = gpt_result.get("suggestions", [])
         improved_caption = gpt_result.get("improved_caption", caption_text)
 
-        # Engagement prediction
         new_row = pd.DataFrame(
             [
                 dict(
@@ -740,7 +742,6 @@ if st.button("✨ Evaluate caption & predict"):
             columns=eng_feature_columns, fill_value=0
         )
         predicted_eng_rate = float(eng_model.predict(new_X)[0])
-
         predicted_interactions = int(predicted_eng_rate * current_followers)
 
         st.session_state["last_result"] = dict(
@@ -789,7 +790,6 @@ if "last_result" in st.session_state:
 
     st.write(res["sentiment_explanation"])
 
-    # Classificar nível de engajamento previsto
     eng_level, eng_level_msg, eng_level_color = classify_engagement_level(
         res["predicted_eng_rate"], engagement_thresholds
     )
@@ -874,10 +874,10 @@ if "last_result" in st.session_state:
     )
 
     if st.button("📋 Use this suggested caption"):
-        try:
-            st.session_state["caption_input"] = res["improved_caption"]
-        except Exception:
-            pass
+        # Copia a legenda sugerida para o campo principal
+        st.session_state["caption_input"] = res["improved_caption"]
+        # Marca que essa alteração veio do botão, não de edição manual
+        st.session_state["apply_suggested"] = True
         st.success("Suggested caption applied to the editor above. You can edit it before posting.")
         st.rerun()
 
