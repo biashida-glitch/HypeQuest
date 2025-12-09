@@ -104,7 +104,7 @@ if "caption_input" not in st.session_state:
 # LOGO NA SIDEBAR
 # =========================================================
 
-LOGO_PATH = "HypeLogo(1).png"  # nome do arquivo que você mencionou
+LOGO_PATH = "HypeLogo(1).png"  # arquivo do logo
 
 with st.sidebar:
     try:
@@ -301,6 +301,7 @@ Return ONLY valid JSON with the keys:
             "improved_caption": caption,
         }
 
+
 # =========================================================
 # META API FUNCTIONS
 # =========================================================
@@ -352,7 +353,7 @@ def fetch_historical_data(instagram_account_id: str, token: str) -> pd.DataFrame
         "fields": ",".join(fields),
         "access_token": token,
         "limit": 100000,
-    ]
+    }
 
     try:
         response = requests.get(BASE_URL, params=params)
@@ -402,10 +403,10 @@ def fetch_historical_data(instagram_account_id: str, token: str) -> pd.DataFrame
 
     return pd.DataFrame(post_list)
 
+
 # =========================================================
 # FAKE API DATA
 # =========================================================
-
 
 def generate_fake_api_data(profile_handle: str, n_posts: int = 160, followers: int = 150000) -> pd.DataFrame:
     rng = np.random.default_rng(abs(hash(profile_handle)) % (2**32))
@@ -472,6 +473,7 @@ def generate_fake_api_data(profile_handle: str, n_posts: int = 160, followers: i
 
     return pd.DataFrame(rows)
 
+
 # =========================================================
 # Engagement-level helpers
 # =========================================================
@@ -499,26 +501,26 @@ def classify_engagement_level(er: float, thresholds: dict):
     if er < low:
         return (
             "LOW",
-            "Below the typical range for this profile (bottom ~1/3 of historical posts).",
+            "Below the typical range for this profile.",
             "#ef4444",
         )
     elif er < high:
         return (
             "MEDIUM",
-            "Within the usual range for this profile (middle ~1/3 of historical posts).",
+            "Within the usual range for this profile.",
             "#eab308",
         )
     else:
         return (
             "HIGH",
-            "Above the usual range for this profile (top ~1/3 of historical posts).",
+            "Above the usual range for this profile.",
             "#22c55e",
         )
+
 
 # =========================================================
 # Model Training
 # =========================================================
-
 
 def train_engagement_model(df: pd.DataFrame):
     feature_cols = [
@@ -694,6 +696,7 @@ if st.button("✨ Evaluate caption & predict"):
         suggestions = gpt_result.get("suggestions", [])
         improved_caption = gpt_result.get("improved_caption", caption_text)
 
+        # Predição de engajamento
         new_row = pd.DataFrame(
             [
                 dict(
