@@ -585,7 +585,7 @@ st.sidebar.info(f"Followers for {profile}: {current_followers:,}")
 
 # Histórico
 if cfg["use_real_api"] and META_TOKEN and cfg["instagram_id"]:
-    with st.spinner("Attempting to load real data from Meta API..."):
+    with st.spinner("Loading data from the API..."):
         historical_df = fetch_historical_data(cfg["instagram_id"], META_TOKEN)
 
 if historical_df.empty or historical_df.shape[0] < 5:
