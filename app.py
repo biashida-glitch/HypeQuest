@@ -21,26 +21,24 @@ st.set_page_config(
 )
 
 # ------------------------------
-# CSS ESTILO HYPE QUEST
+# CSS ESTILO HYPE QUEST (fontes mais padronizadas)
 # ------------------------------
 st.markdown("""
 <style>
-    /* Fundo geral - céu */
     .main {
         background-color: #B7E3FF;
     }
 
-    /* Centralizar container principal e limitar largura */
     .block-container {
         padding-top: 1rem;
         max-width: 1100px;
         margin: 0 auto;
+        font-size: 14px;
     }
 
-    /* Título principal estilo pixel */
     .hype-title {
         font-family: monospace;
-        font-size: 40px;
+        font-size: 34px;
         font-weight: 900;
         letter-spacing: 4px;
         color: #1C0A4A;
@@ -51,16 +49,14 @@ st.markdown("""
         margin-bottom: 4px;
     }
 
-    /* Subtítulo */
     .hype-subtitle {
         font-family: monospace;
-        font-size: 16px;
+        font-size: 14px;
         color: #1C0A4A;
         text-align: center;
         margin-bottom: 8px;
     }
 
-    /* Badge de status IA */
     .hype-status {
         font-size: 12px;
         color: #6b7280;
@@ -68,21 +64,19 @@ st.markdown("""
         margin-bottom: 6px;
     }
 
-    /* Linha divisória mais suave */
     hr {
         border: none;
         border-top: 2px solid #8FD0FF;
         margin: 0.6rem 0 1rem 0;
     }
 
-    /* Botão estilo START */
     .stButton>button {
         border-radius: 6px;
         border: 3px solid #1C0A4A;
         background: linear-gradient(180deg, #FFDD55 0%, #FFB800 70%);
         color: #1C0A4A;
         font-weight: bold;
-        font-size: 18px;
+        font-size: 16px;
         padding: 6px 22px;
         box-shadow: 0px 4px 0px #D98F00;
     }
@@ -92,33 +86,30 @@ st.markdown("""
         box-shadow: 0px 4px 0px #C57D00;
     }
 
-    /* Sidebar com azul intermediário */
     section[data-testid="stSidebar"] {
         background-color: #8FD0FF !important;
+        font-size: 13px;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # =========================================================
-# STATE INICIAL
+# ESTADO INICIAL (CAPTION)
 # =========================================================
 
-if "caption_input" not in st.session_state:
-    st.session_state["caption_input"] = ""
-
-# Flag para sabermos se o caption foi atualizado via botão de sugestão
-if "apply_suggested" not in st.session_state:
-    st.session_state["apply_suggested"] = False
+# Estado que controla o texto padrão do campo de caption
+if "caption_default" not in st.session_state:
+    st.session_state["caption_default"] = ""
 
 # =========================================================
 # LOGO HYPEQUEST
 # =========================================================
 
-LOGO_PATH = "hypequest_logo.png"  # coloque este arquivo na mesma pasta do app
+LOGO_PATH = "HypeLogo(1).png"       # nome que você indicou
 KV_IMAGE_PATH = "hypequest_kv.png"  # opcional
 
 try:
-    st.image(LOGO_PATH, width=180)
+    st.image(LOGO_PATH, width=170)
 except Exception:
     pass
 
@@ -137,24 +128,20 @@ st.markdown(
 # API Credentials and Client Setup
 # =========================================================
 
-# Meta
 META_TOKEN = st.secrets.get("META_ACCESS_TOKEN", None)
 INSTAGRAM_ID = st.secrets.get("INSTAGRAM_ACCOUNT_ID", None)  # PUBG MENA
 
-# -------- OpenAI: carregamento robusto --------
+
 def get_openai_api_key() -> Optional[str]:
-    # 1) Ambiente
     env_key = os.getenv("OPENAI_API_KEY")
     if env_key:
         return env_key
 
-    # 2) Secrets flat
     if "OPENAI_API_KEY" in st.secrets:
         return st.secrets["OPENAI_API_KEY"]
     if "openai_api_key" in st.secrets:
         return st.secrets["openai_api_key"]
 
-    # 3) Secrets aninhado: [openai] api_key="..."
     if "openai" in st.secrets:
         nested = st.secrets["openai"]
         if isinstance(nested, dict) and "api_key" in nested:
@@ -224,8 +211,6 @@ def basic_sentiment(caption: str) -> str:
 
 
 def gpt_caption_analysis(caption: str, context: dict) -> dict:
-
-    # -------- Fallback (no OpenAI) --------
     if openai_client is None:
         sentiment = basic_sentiment(caption)
         explanation = (
@@ -247,7 +232,6 @@ def gpt_caption_analysis(caption: str, context: dict) -> dict:
             "improved_caption": improved_caption,
         }
 
-    # -------- Real GPT call (chat.completions) --------
     system_prompt = """
 You are a social media strategist specialized in gaming content.
 Always output ONLY a valid JSON object (no markdown, no extra text).
@@ -325,9 +309,6 @@ Return ONLY valid JSON with the keys:
 
 @st.cache_data(ttl=600, show_spinner=False)
 def fetch_follower_count(instagram_account_id: str, token: str) -> int:
-    """
-    Fetches the current follower count for the Instagram Business Account.
-    """
     if not token or not instagram_account_id:
         return 150000
 
@@ -344,7 +325,6 @@ def fetch_follower_count(instagram_account_id: str, token: str) -> int:
         data = response.json()
 
         raw_count = data.get("followers_count")
-
         if isinstance(raw_count, dict):
             count = raw_count.get("count")
         else:
@@ -359,9 +339,6 @@ def fetch_follower_count(instagram_account_id: str, token: str) -> int:
 
 @st.cache_data(ttl=600, show_spinner=False)
 def fetch_historical_data(instagram_account_id: str, token: str) -> pd.DataFrame:
-    """
-    Fetches historical media data (posts and metrics) from the Meta Graph API.
-    """
     BASE_URL = f"https://graph.facebook.com/v19.0/{instagram_account_id}/media"
 
     fields = [
@@ -419,7 +396,7 @@ def fetch_historical_data(instagram_account_id: str, token: str) -> pd.DataFrame
             "comments": comments,
             "shares": 0,
             "engagement": engagement,              # likes + comments
-            "engagement_rate": engagement / 100000,  # placeholder, será sobrescrito
+            "engagement_rate": engagement / 100000,  # placeholder
             "id": post["id"],
             "timestamp": post_time,
             "caption": caption,
@@ -428,7 +405,7 @@ def fetch_historical_data(instagram_account_id: str, token: str) -> pd.DataFrame
     return pd.DataFrame(post_list)
 
 # =========================================================
-# FAKE API DATA FALLBACK
+# FAKE API DATA
 # =========================================================
 
 
@@ -502,9 +479,6 @@ def generate_fake_api_data(profile_handle: str, n_posts: int = 160, followers: i
 # =========================================================
 
 def compute_engagement_thresholds(df: pd.DataFrame) -> dict:
-    """
-    Pontos de corte (baixo / médio / alto) a partir do histórico do perfil.
-    """
     if df.empty or "engagement_rate" not in df.columns:
         return {"low": 0.0, "high": 0.0}
 
@@ -594,7 +568,7 @@ cfg = PROFILE_CONFIG[profile]
 
 historical_df = pd.DataFrame()
 
-# 1. Followers (real ou default)
+# Followers
 if cfg["use_real_api"] and META_TOKEN and cfg["instagram_id"]:
     current_followers = fetch_follower_count(cfg["instagram_id"], META_TOKEN)
 else:
@@ -602,12 +576,11 @@ else:
 
 st.sidebar.info(f"Followers for {profile}: {current_followers:,}")
 
-# 2. Dados históricos (real ou não)
+# Histórico
 if cfg["use_real_api"] and META_TOKEN and cfg["instagram_id"]:
     with st.spinner("Attempting to load real data from Meta API..."):
         historical_df = fetch_historical_data(cfg["instagram_id"], META_TOKEN)
 
-# 3. Fallback para dados sintéticos
 if historical_df.empty or historical_df.shape[0] < 5:
     if cfg["use_real_api"]:
         st.sidebar.error(
@@ -622,17 +595,17 @@ else:
     historical_df["engagement_rate"] = historical_df["engagement"] / current_followers
     st.sidebar.success(f"Loaded real posts for {profile}: {len(historical_df)}")
 
-# 4. Thresholds de engajamento por perfil
+# Thresholds para LOW/MEDIUM/HIGH
 engagement_thresholds = compute_engagement_thresholds(historical_df)
 
-# Botão para atualizar cache + re-treinar
+# Botão para refresh
 if cfg["use_real_api"] and META_TOKEN and cfg["instagram_id"]:
     if st.sidebar.button("🔄 Refresh Instagram data"):
         fetch_follower_count.clear()
         fetch_historical_data.clear()
         st.rerun()
 
-# Treina modelo para o perfil atual
+# Modelo
 eng_model, eng_feature_columns = train_engagement_model(historical_df)
 
 st.sidebar.markdown("---")
@@ -681,15 +654,18 @@ st.markdown("### ✍️ Caption")
 
 caption_text = st.text_area(
     "Caption text",
+    value=st.session_state["caption_default"],
     key="caption_input",
     placeholder="Write your caption here...",
     height=120,
 )
+# mantém o estado sempre sincronizado com o que o usuário digitou
+st.session_state["caption_default"] = caption_text
 
 caption_length = len(caption_text or "")
 st.caption(f"Caption length: {caption_length} characters (used as a feature).")
 
-# Snapshot dos inputs para invalidar resultado quando usuário altera algo
+# Snapshot de inputs para invalidar resultado quando mudar algo
 current_inputs = dict(
     post_type=post_type,
     hour=hour,
@@ -701,12 +677,8 @@ current_inputs = dict(
 
 if "last_result" in st.session_state:
     last_inputs = st.session_state["last_result"].get("inputs", {})
-    # Se o usuário mudou algo manualmente, apagamos o resultado anterior.
-    # Se a mudança veio do botão "Use this suggested caption", mantemos.
-    if last_inputs != current_inputs and not st.session_state.get("apply_suggested", False):
+    if last_inputs != current_inputs:
         del st.session_state["last_result"]
-    # Reseta o flag depois de usar
-    st.session_state["apply_suggested"] = False
 
 # =========================================================
 # Button – Evaluate
@@ -756,7 +728,7 @@ if st.button("✨ Evaluate caption & predict"):
         )
 
 # =========================================================
-# Results – only appear after Evaluate and if inputs unchanged
+# Results – only appear after Evaluate
 # =========================================================
 
 if "last_result" in st.session_state:
@@ -797,19 +769,19 @@ if "last_result" in st.session_state:
     st.markdown("")
     st.markdown(
         f"""
-        <div style="border-radius:12px;padding:16px 20px;
+        <div style="border-radius:12px;padding:14px 18px;
                     background-color:#e0f2fe;border:1px solid #bae6fd;">
             <div style="font-size:13px;color:#0369a1;
                          font-weight:600;margin-bottom:4px;">
                 Predicted engagement
             </div>
-            <div style="font-size:22px;font-weight:700;color:#0f172a;">
+            <div style="font-size:20px;font-weight:700;color:#0f172a;">
                 {res['predicted_interactions']:,} interactions
             </div>
             <div style="font-size:12px;color:#0369a1;margin-top:4px;">
                 Engagement rate: {res['predicted_eng_rate']*100:.2f}% for ~{res['followers']:,} followers.
             </div>
-            <div style="margin-top:10px;">
+            <div style="margin-top:8px;">
                 <div style="display:inline-flex;align-items:center;
                             padding:4px 10px;border-radius:999px;
                             background-color:{eng_level_color}22;
@@ -841,7 +813,7 @@ if "last_result" in st.session_state:
 
     if not (18 <= hour <= 22 and weekday in ["Thursday", "Friday", "Saturday"]):
         tips.append(
-            "Historical data shows stronger engagement between **18–22 UTC** on Thursday–Saturday. "
+            "Historical data shows stronger engagement between 18–22 UTC on Thursday–Saturday. "
             "Consider testing this post closer to prime time."
         )
 
@@ -863,7 +835,7 @@ if "last_result" in st.session_state:
 
     st.info(
         "This suggestion is generated from your original caption. "
-        "You can apply it to the editor above and tweak it as you like."
+        "Click the button below to apply it to the caption field above and then re-run the evaluation."
     )
 
     st.text_area(
@@ -874,11 +846,9 @@ if "last_result" in st.session_state:
     )
 
     if st.button("📋 Use this suggested caption"):
-        # Copia a legenda sugerida para o campo principal
-        st.session_state["caption_input"] = res["improved_caption"]
-        # Marca que essa alteração veio do botão, não de edição manual
-        st.session_state["apply_suggested"] = True
-        st.success("Suggested caption applied to the editor above. You can edit it before posting.")
+        # Atualiza apenas o texto padrão usado pelo campo principal
+        st.session_state["caption_default"] = res["improved_caption"]
+        st.success("Suggested caption applied to the editor above. Now you can evaluate again.")
         st.rerun()
 
 st.markdown("---")
