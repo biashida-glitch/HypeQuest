@@ -21,7 +21,7 @@ st.set_page_config(
 )
 
 # ------------------------------
-# CSS ESTILO HYPE QUEST (fontes padronizadas)
+# CSS ESTILO HYPE QUEST (fontes padronizadas + sidebar centralizada)
 # ------------------------------
 st.markdown("""
 <style>
@@ -93,9 +93,28 @@ st.markdown("""
         box-shadow: 0px 4px 0px #C57D00;
     }
 
+    /* Sidebar com fundo azul e fontes menores */
     section[data-testid="stSidebar"] {
         background-color: #8FD0FF !important;
         font-size: 13px;
+    }
+
+    /* Centralizar logo e remover clique/fullscreen */
+    section[data-testid="stSidebar"] [data-testid="stImage"] button {
+        display: none !important;          /* tira o botão de expandir */
+    }
+    section[data-testid="stSidebar"] [data-testid="stImage"] img {
+        display: block;
+        margin: 0 auto;                    /* centraliza o logo */
+        pointer-events: none;              /* não deixa clicar */
+    }
+
+    /* Centralizar títulos e textos “infos” da sidebar */
+    section[data-testid="stSidebar"] h1,
+    section[data-testid="stSidebar"] h2,
+    section[data-testid="stSidebar"] h3,
+    section[data-testid="stSidebar"] .stMarkdown p {
+        text-align: center;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -111,11 +130,11 @@ if "caption_input" not in st.session_state:
 # LOGO NA SIDEBAR
 # =========================================================
 
-LOGO_PATH = "HypeLogo(1).png"  # arquivo do logo
+LOGO_PATH = "HypeLogo(1).png"  # lembre de usar PNG com fundo transparente
 
 with st.sidebar:
     try:
-        st.image(LOGO_PATH, width=130)  # logo menor
+        st.image(LOGO_PATH, width=130)
     except Exception:
         pass
 
@@ -585,7 +604,7 @@ st.sidebar.info(f"Followers for {profile}: {current_followers:,}")
 
 # Histórico
 if cfg["use_real_api"] and META_TOKEN and cfg["instagram_id"]:
-    with st.spinner("Loading data from the API..."):
+    with st.spinner("Attempting to load real data from Meta API..."):
         historical_df = fetch_historical_data(cfg["instagram_id"], META_TOKEN)
 
 if historical_df.empty or historical_df.shape[0] < 5:
