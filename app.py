@@ -90,12 +90,12 @@ st.markdown("""
         box-shadow: 0 2px 0px #1C0A4A;
     }
 
-    /* Botões gerais – texto branco */
+    /* Botões – texto preto em todos os estados */
     .stButton>button {
         border-radius: 999px;
         border: 3px solid #1C0A4A;
         background: linear-gradient(180deg, #FFEE80 0%, #FFCF33 60%, #FFB800 100%);
-        color: #F9FAFB;
+        color: #000000 !important;        /* preto */
         font-weight: bold;
         font-size: 15px;
         padding: 6px 22px;
@@ -108,18 +108,13 @@ st.markdown("""
         background: linear-gradient(180deg, #FFF6A0 0%, #FFD447 60%, #FFC733 100%);
         box-shadow: 0px 4px 0px #A36200;
         transform: translateY(1px);
+        color: #000000 !important;
     }
 
     .stButton>button:active {
         box-shadow: 0px 2px 0px #7E4A00;
         transform: translateY(3px);
-    }
-
-    /* APENAS o botão de refresh com texto preto */
-    #refresh-btn-container .stButton>button,
-    #refresh-btn-container .stButton>button:hover,
-    #refresh-btn-container .stButton>button:active {
-        color: #111827 !important;
+        color: #000000 !important;
     }
 
     /* Sidebar em roxo/azul */
@@ -725,14 +720,9 @@ else:
 # Thresholds para LOW/MEDIUM/HIGH
 engagement_thresholds = compute_engagement_thresholds(historical_df)
 
-# Botão para refresh – dentro de um container com ID próprio
+# Botão para refresh
 if cfg["use_real_api"] and META_TOKEN and cfg["instagram_id"]:
-    with st.sidebar:
-        st.markdown('<div id="refresh-btn-container">', unsafe_allow_html=True)
-        refresh_clicked = st.button("🔄 Refresh Instagram data", key="refresh_button")
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    if refresh_clicked:
+    if st.sidebar.button("🔄 Refresh Instagram data"):
         fetch_follower_count.clear()
         fetch_historical_data.clear()
         st.rerun()
