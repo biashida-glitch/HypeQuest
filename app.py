@@ -3,6 +3,8 @@ import json
 from datetime import datetime
 from typing import Optional
 
+import base64  # para embutir o vídeo em base64
+
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -21,7 +23,7 @@ st.set_page_config(
 )
 
 # ------------------------------
-# CSS ESTILO HYPE QUEST
+# CSS – VISUAL INSPIRADO NO LOGO HYPEQUEST
 # ------------------------------
 st.markdown("""
 <style>
@@ -31,73 +33,141 @@ st.markdown("""
     }
     body, p, span, div, section {
         font-size: 14px;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
 
+    /* Fundo geral em degradê azul, inspirado no logo */
     .main {
-        background-color: #B7E3FF;
+        background: radial-gradient(circle at top, #B7E3FF 0%, #8FD0FF 35%, #6BB7FF 70%, #4B8BE4 100%);
     }
 
+    /* Card central como “cartucho”, com borda roxa forte */
     .block-container {
-        padding-top: 3rem;              /* mais espaço no topo para não cortar o título */
+        padding-top: 2.6rem;
+        padding-bottom: 2.2rem;
         max-width: 1100px;
-        margin: 0 auto;
+        margin: 2rem auto 2.5rem auto;
+        background: #FDFBFF;
+        border-radius: 24px;
+        border: 4px solid #1C0A4A;
+        box-shadow:
+            0 22px 0px rgba(28, 10, 74, 0.45),
+            0 26px 30px rgba(0, 0, 0, 0.35);
     }
 
+    /* Título principal em estilo “logo” */
     .hype-title {
-        font-family: monospace;
-        font-size: 30px;
+        font-family: "VT323", monospace, system-ui;
+        font-size: 32px;
         font-weight: 900;
-        letter-spacing: 4px;
+        letter-spacing: 5px;
         color: #1C0A4A;
         text-align: center;
         text-transform: uppercase;
-        text-shadow: 3px 3px 0px #8FD0FF;
-        margin-top: 0.5rem;
-        margin-bottom: 0.25rem;
+        text-shadow:
+            3px 3px 0px #8FD0FF,
+            6px 6px 0px #FFD447;
+        margin-top: 0.3rem;
+        margin-bottom: 0.1rem;
     }
 
     .hype-subtitle {
-        font-family: monospace;
+        font-family: "VT323", monospace, system-ui;
         font-size: 14px;
+        letter-spacing: 2px;
         color: #1C0A4A;
         text-align: center;
-        margin-bottom: 8px;
+        text-transform: uppercase;
+        margin-bottom: 10px;
     }
 
     .hype-status {
         font-size: 12px;
-        color: #6b7280;
+        color: #4b5563;
         text-align: center;
         margin-bottom: 6px;
     }
 
+    /* Linha separadora reforçando a identidade */
     hr {
         border: none;
-        border-top: 2px solid #8FD0FF;
-        margin: 0.6rem 0 1rem 0;
+        border-top: 3px solid #FFD447;
+        margin: 0.7rem 0 1.2rem 0;
+        box-shadow: 0 2px 0px #1C0A4A;
     }
 
+    /* Botão principal em estilo arcade, com “depth” */
     .stButton>button {
-        border-radius: 6px;
+        border-radius: 999px;
         border: 3px solid #1C0A4A;
-        background: linear-gradient(180deg, #FFDD55 0%, #FFB800 70%);
+        background: linear-gradient(180deg, #FFEE80 0%, #FFCF33 60%, #FFB800 100%);
         color: #1C0A4A;
-        font-weight: bold;
+        font-weight: 800;
         font-size: 15px;
-        padding: 6px 22px;
-        box-shadow: 0px 4px 0px #D98F00;
+        padding: 6px 26px;
+        box-shadow: 0px 5px 0px #C57D00;
+        text-transform: uppercase;
+        letter-spacing: 1px;
     }
 
     .stButton>button:hover {
-        background: linear-gradient(180deg, #FFE680 0%, #FFC933 70%);
-        box-shadow: 0px 4px 0px #C57D00;
+        background: linear-gradient(180deg, #FFF6A0 0%, #FFD447 60%, #FFC733 100%);
+        box-shadow: 0px 4px 0px #A36200;
+        transform: translateY(1px);
     }
 
-    /* Sidebar com fundo azul e fontes menores */
+    .stButton>button:active {
+        box-shadow: 0px 2px 0px #7E4A00;
+        transform: translateY(3px);
+    }
+
+    /* Sidebar com visual de “HUD” lateral */
     section[data-testid="stSidebar"] {
-        background-color: #8FD0FF !important;
+        background: linear-gradient(180deg, #1C0A4A 0%, #311585 40%, #1C0A4A 100%) !important;
         font-size: 13px;
         padding-top: 1.5rem;
+        border-right: 4px solid #FFD447;
+        box-shadow: 4px 0 14px rgba(0,0,0,0.4);
+    }
+
+    section[data-testid="stSidebar"] .css-1d391kg, /* fallback para alguns temas */
+    section[data-testid="stSidebar"] .block-container {
+        background: transparent !important;
+        box-shadow: none !important;
+    }
+
+    /* Títulos e textos da sidebar em tema do logo */
+    section[data-testid="stSidebar"] h1,
+    section[data-testid="stSidebar"] h2,
+    section[data-testid="stSidebar"] h3 {
+        text-align: center;
+        color: #FDFBFF;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+
+    section[data-testid="stSidebar"] .stMarkdown p,
+    section[data-testid="stSidebar"] p {
+        text-align: center;
+        color: #E0D7FF;
+    }
+
+    section[data-testid="stSidebar"] .stAlert > div {
+        border-radius: 14px;
+        border: 2px solid #FFD447;
+        background: rgba(255, 244, 180, 0.16);
+        color: #FFF9DD;
+        font-size: 12px;
+    }
+
+    /* Chips de informação na sidebar (followers etc.) */
+    section[data-testid="stSidebar"] .stInfo > div {
+        border-radius: 999px;
+        border: 2px solid #8FD0FF;
+        background: rgba(183, 227, 255, 0.06);
+        color: #E0F2FF;
+        font-size: 12px;
+        text-align: center;
     }
 
     /* Animação suave do logo (flutuar) */
@@ -107,31 +177,87 @@ st.markdown("""
         100% { transform: translateY(0px); }
     }
 
-    /* Container do logo na sidebar centralizado */
-    section[data-testid="stSidebar"] div[data-testid="stImage"] {
+    /* Container do logo na sidebar centralizado (vídeo ou imagem) */
+    section[data-testid="stSidebar"] .hype-logo-wrapper {
         display: flex;
         justify-content: center;
         margin-bottom: 1rem;
     }
 
-    /* Remover botão de fullscreen e clique no logo */
+    section[data-testid="stSidebar"] .hype-logo-wrapper video,
+    section[data-testid="stSidebar"] div[data-testid="stImage"] img {
+        width: 130px;
+        height: auto;
+        pointer-events: none;              /* não clicável */
+        border-radius: 20px;
+        box-shadow:
+            0 0 0 3px #FFD447,
+            0 0 0 7px #1C0A4A;
+        animation: hypeFloat 2.4s ease-in-out infinite;
+        background: radial-gradient(circle at top, #B7E3FF 0%, #1C0A4A 80%);
+    }
+
+    /* Remover botão de fullscreen do componente padrão de imagem, caso usado como fallback */
     section[data-testid="stSidebar"] div[data-testid="stImage"] button {
         display: none !important;
     }
 
-    section[data-testid="stSidebar"] div[data-testid="stImage"] img {
-        width: 130px;
-        height: auto;
-        pointer-events: none;
-        animation: hypeFloat 2.5s ease-in-out infinite;
+    /* Seções internas – subtítulos em “barra” */
+    h2, .stMarkdown h2 {
+        font-size: 18px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: #1C0A4A;
+        padding: 6px 12px;
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: linear-gradient(90deg, #FFD447 0%, #FFEE80 40%, #B7E3FF 100%);
+        box-shadow: 0 3px 0 #1C0A4A;
+        margin-bottom: 0.6rem;
     }
 
-    /* Centralizar títulos e textos “infos” da sidebar */
-    section[data-testid="stSidebar"] h1,
-    section[data-testid="stSidebar"] h2,
-    section[data-testid="stSidebar"] h3,
-    section[data-testid="stSidebar"] .stMarkdown p {
-        text-align: center;
+    /* Card de resultado principal */
+    .hype-card-result {
+        border-radius: 16px;
+        padding: 14px 18px;
+        background: linear-gradient(135deg, #E0F2FE 0%, #FDFBFF 40%, #E5DEFF 100%);
+        border: 2px solid #8FD0FF;
+        box-shadow: 0 10px 20px rgba(15, 23, 42, 0.25);
+    }
+
+    /* Chips de status sentiment/engagement já são HTML custom no código */
+
+    /* Ajustes dos textareas para ficar mais “UI de ferramenta” */
+    textarea {
+        border-radius: 14px !important;
+        border: 2px solid #8FD0FF !important;
+    }
+
+    /* Ajustes das sliders e selects para combinar com a paleta */
+    .stSlider > div > div > div > div {
+        background: linear-gradient(90deg, #FFD447 0%, #FFB800 60%, #FF8A3C 100%) !important;
+    }
+
+    .stSlider > div > div > div > div > div {
+        background: #1C0A4A !important;
+        box-shadow: 0 0 0 2px #FFD447;
+    }
+
+    .stSelectbox > div > div {
+        border-radius: 14px !important;
+        border: 2px solid #8FD0FF !important;
+    }
+
+    .stSelectbox label {
+        font-weight: 600;
+        color: #1C0A4A;
+    }
+
+    .stCaption, .stMarkdown small, .stMarkdown .caption {
+        color: #6b7280 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -144,16 +270,42 @@ if "caption_input" not in st.session_state:
     st.session_state["caption_input"] = ""
 
 # =========================================================
-# LOGO NA SIDEBAR
+# LOGO NA SIDEBAR (VÍDEO MP4 + FALLBACK PNG)
 # =========================================================
 
-LOGO_PATH = "HypeLogo(1).png"  # ideal: PNG com fundo transparente
+VIDEO_LOGO_PATH = "HypeLogo(1).mp4"
+STATIC_LOGO_PATH = "HypeLogo(1).png"  # fallback opcional (PNG com fundo transparente)
 
 with st.sidebar:
-    try:
-        st.image(LOGO_PATH)  # tamanho controlado via CSS
-    except Exception:
-        pass
+    if os.path.exists(VIDEO_LOGO_PATH):
+        try:
+            with open(VIDEO_LOGO_PATH, "rb") as f:
+                video_bytes = f.read()
+            video_b64 = base64.b64encode(video_bytes).decode("utf-8")
+
+            st.markdown(
+                f"""
+                <div class="hype-logo-wrapper">
+                    <video autoplay loop muted playsinline>
+                        <source src="data:video/mp4;base64,{video_b64}" type="video/mp4">
+                    </video>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        except Exception as e:
+            st.sidebar.error(f"Error loading logo video: {e}")
+            # fallback para imagem estática
+            try:
+                st.image(STATIC_LOGO_PATH)
+            except Exception:
+                pass
+    else:
+        # Se o vídeo não existir, usa imagem estática
+        try:
+            st.image(STATIC_LOGO_PATH)
+        except Exception:
+            pass
 
 # =========================================================
 # HEADER PRINCIPAL
@@ -806,12 +958,12 @@ if "last_result" in st.session_state:
             <div style="display:inline-flex;align-items:center;
                         padding:4px 12px;border-radius:999px;
                         background-color:#e5e7eb;
-                        border:1px solid #d1d5db;
-                        margin-bottom:8px;">
+                        border:2px solid #d1d5db;
+                        margin-bottom:8px;box-shadow:0 3px 0 #9ca3af;">
                 <span style="width:8px;height:8px;border-radius:999px;
                             background-color:#9ca3af;
                             display:inline-block;margin-right:8px;"></span>
-                <span style="font-weight:600;color:#4b5563;">
+                <span style="font-weight:700;color:#4b5563;letter-spacing:0.5px;">
                     No caption added
                 </span>
             </div>
@@ -828,113 +980,3 @@ if "last_result" in st.session_state:
             "POSITIVE": "#22c55e",
             "NEGATIVE": "#ef4444",
             "NEUTRAL": "#eab308",
-        }.get(res["sentiment_label"], "#6b7280")
-
-        st.markdown(
-            f"""
-            <div style="display:inline-flex;align-items:center;
-                        padding:4px 12px;border-radius:999px;
-                        background-color:{sentiment_color}22;
-                        border:1px solid {sentiment_color};
-                        margin-bottom:8px;">
-                <span style="width:8px;height:8px;border-radius:999px;
-                              background-color:{sentiment_color};
-                              display:inline-block;margin-right:8px;"></span>
-                <span style="font-weight:600;color:{sentiment_color};">
-                    {res['sentiment_label']}
-                </span>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        st.write(res["sentiment_explanation"])
-
-    eng_level, eng_level_msg, eng_level_color = classify_engagement_level(
-        res["predicted_eng_rate"], engagement_thresholds
-    )
-
-    st.markdown("")
-    st.markdown(
-        f"""
-        <div style="border-radius:12px;padding:14px 18px;
-                    background-color:#e0f2fe;border:1px solid #bae6fd;">
-            <div style="font-size:13px;color:#0369a1;
-                         font-weight:600;margin-bottom:4px;">
-                Predicted engagement
-            </div>
-            <div style="font-size:20px;font-weight:700;color:#0f172a;">
-                {res['predicted_interactions']:,} interactions
-            </div>
-            <div style="font-size:12px;color:#0369a1;margin-top:4px;">
-                Engagement rate: {res['predicted_eng_rate']*100:.2f}% for ~{res['followers']:,} followers.
-            </div>
-            <div style="margin-top:8px;">
-                <div style="display:inline-flex;align-items:center;
-                            padding:4px 10px;border-radius:999px;
-                            background-color:{eng_level_color}22;
-                            border:1px solid {eng_level_color};
-                            font-size:12px;font-weight:600;
-                            color:{eng_level_color};">
-                    <span style="width:8px;height:8px;border-radius:999px;
-                                 background-color:{eng_level_color};
-                                 display:inline-block;margin-right:8px;"></span>
-                    <span>Engagement level: {eng_level}</span>
-                </div>
-                <div style="font-size:11px;color:#0369a1;margin-top:4px;">
-                    {eng_level_msg}
-                </div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    st.caption(
-        "Sentiment is estimated using caption text and context (when provided); "
-        "engagement is predicted using a Decision Tree model trained on this "
-        "profile's historical posts (real or synthetic)."
-    )
-
-    st.markdown("### 💡 Suggestions to improve this post")
-
-    tips = []
-
-    if not (18 <= hour <= 22 and weekday in ["Thursday", "Friday", "Saturday"]):
-        tips.append(
-            "Historical data shows stronger engagement between 18–22 UTC on Thursday–Saturday. "
-            "Consider testing this post closer to prime time."
-        )
-
-    if caption_length < 40:
-        tips.append(
-            "Your caption is very short. Consider adding a bit more context, a hook, or a clear benefit for players."
-        )
-    elif caption_length > 350:
-        tips.append(
-            "Your caption is quite long. Check if you can tighten it while keeping the key message and CTA."
-        )
-
-    tips.extend(res["suggestions"])
-
-    for t in tips:
-        st.markdown(f"- {t}")
-
-    st.markdown("### ✨ Suggested improved caption")
-
-    st.info(
-        "This suggestion is generated from your original caption. "
-        "You can copy & paste it into the caption editor above and tweak it as you like."
-    )
-
-    st.text_area(
-        "Suggested version (you can copy/paste):",
-        value=res["improved_caption"],
-        height=90,
-        key="suggested_caption_display",
-    )
-
-st.markdown("---")
-st.caption(
-    "Data used for training is either fetched live from the Meta API or generated synthetically as a fallback."
-)
