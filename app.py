@@ -34,9 +34,9 @@ st.markdown("""
         font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
 
-    /* Fundo geral em tons de azul */
+    /* Fundo geral em tons de roxo/azul */
     .main {
-        background: radial-gradient(circle at top, #B7E3FF 0%, #8FD0FF 40%, #4B8BE4 100%);
+        background: radial-gradient(circle at top, #0D0335 0%, #140749 40%, #1C0A4A 100%);
     }
 
     .block-container {
@@ -85,7 +85,7 @@ st.markdown("""
 
     hr {
         border: none;
-        border-top: 3px solid #FFD447;
+        border-top: 2px solid #FFD447;
         margin: 0.6rem 0 1.2rem 0;
         box-shadow: 0 2px 0px #1C0A4A;
     }
@@ -116,7 +116,7 @@ st.markdown("""
 
     /* Sidebar em roxo/azul */
     section[data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #1C0A4A 0%, #311585 40%, #1C0A4A 100%) !important;
+        background: linear-gradient(180deg, #0D0335 0%, #1B0641 40%, #0D0335 100%) !important;
         font-size: 13px;
         padding-top: 1.5rem;
         border-right: 4px solid #FFD447;
@@ -135,33 +135,53 @@ st.markdown("""
         display: none !important;
     }
 
+    /* LOGO: mostrar apenas a própria arte, sem quadrado extra */
     section[data-testid="stSidebar"] div[data-testid="stImage"] img {
-        width: 130px;
+        width: 230px;          /* pode ajustar se quiser maior/menor */
         height: auto;
         pointer-events: none;
-        border-radius: 20px;
-        box-shadow:
-            0 0 0 3px #FFD447,
-            0 0 0 7px #1C0A4A;
-        background: radial-gradient(circle at top, #B7E3FF 0%, #1C0A4A 80%);
+        border-radius: 0;      /* sem arredondar além do que já existe no arquivo */
+        box-shadow: none;      /* remove aquele quadrado/contorno extra */
+        background: transparent;
     }
 
     /* Centralizar textos da sidebar */
     section[data-testid="stSidebar"] h1,
     section[data-testid="stSidebar"] h2,
-    section[data-testid="stSidebar"] h3,
-    section[data-testid="stSidebar"] .stMarkdown p {
+    section[data-testid="stSidebar"] h3 {
         text-align: center;
         color: #FDFBFF;
     }
 
-    section[data-testid="stSidebar"] .stInfo > div {
-        border-radius: 999px;
-        border: 2px solid #8FD0FF;
-        background: rgba(183, 227, 255, 0.08);
-        color: #E0F2FF;
-        font-size: 12px;
+    section[data-testid="stSidebar"] .stMarkdown p,
+    section[data-testid="stSidebar"] p {
         text-align: center;
+        color: #E0D7FF;
+    }
+
+    /* Cards de info/sucesso bem legíveis */
+    section[data-testid="stSidebar"] .stInfo > div {
+        border-radius: 12px;
+        border: 1px solid #8FD0FF;
+        background: rgba(26, 115, 232, 0.18); /* azul mais claro */
+        color: #E9F2FF;
+        font-size: 12px;
+    }
+
+    section[data-testid="stSidebar"] .stSuccess > div {
+        border-radius: 12px;
+        border: 1px solid #4ade80;
+        background: rgba(34, 197, 94, 0.18);
+        color: #bbf7d0;
+        font-size: 12px;
+    }
+
+    section[data-testid="stSidebar"] .stError > div {
+        border-radius: 12px;
+        border: 1px solid #f97373;
+        background: rgba(248, 113, 113, 0.18);
+        color: #fee2e2;
+        font-size: 12px;
     }
 
     /* Inputs mais alinhados com a paleta */
@@ -197,7 +217,7 @@ if "caption_input" not in st.session_state:
 # LOGO NA SIDEBAR – ESTÁTICO (PNG)
 # =========================================================
 
-LOGO_PATH = "HypeLogo(1).png"  # PNG com fundo transparente na mesma pasta do app
+LOGO_PATH = "HypeLogo(1).png"  # PNG com fundo transparente ou fundo próprio
 
 with st.sidebar:
     try:
