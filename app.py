@@ -3,6 +3,8 @@ import json
 from datetime import datetime
 from typing import Optional
 
+import base64  # para embutir o vídeo em base64
+
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -153,17 +155,30 @@ STATIC_LOGO_PATH = "HypeLogo(1).png"  # fallback opcional (PNG com fundo transpa
 
 with st.sidebar:
     if os.path.exists(VIDEO_LOGO_PATH):
-        # Usando HTML para ter autoplay/loop/muted sem controles e sem clique
-        st.markdown(
-            f"""
-            <div class="hype-logo-wrapper">
-                <video src="{VIDEO_LOGO_PATH}" autoplay loop muted playsinline></video>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        try:
+            with open(VIDEO_LOGO_PATH, "rb") as f:
+                video_bytes = f.read()
+            video_b64 = base64.b64encode(video_bytes).decode("utf-8")
+
+            st.markdown(
+                f"""
+                <div class="hype-logo-wrapper">
+                    <video autoplay loop muted playsinline>
+                        <source src="data:video/mp4;base64,{video_b64}" type="video/mp4">
+                    </video>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        except Exception as e:
+            st.sidebar.error(f"Error loading logo video: {e}")
+            # fallback para imagem estática
+            try:
+                st.image(STATIC_LOGO_PATH)
+            except Exception:
+                pass
     else:
-        # Fallback para imagem estática, se o vídeo não estiver disponível
+        # Se o vídeo não existir, usa imagem estática
         try:
             st.image(STATIC_LOGO_PATH)
         except Exception:
