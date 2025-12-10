@@ -3,8 +3,6 @@ import json
 from datetime import datetime
 from typing import Optional
 
-import base64  # para embutir o vídeo em base64
-
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -109,24 +107,23 @@ st.markdown("""
         100% { transform: translateY(0px); }
     }
 
-    /* Container do logo na sidebar centralizado (vídeo ou imagem) */
-    section[data-testid="stSidebar"] .hype-logo-wrapper {
+    /* Container do logo na sidebar centralizado */
+    section[data-testid="stSidebar"] div[data-testid="stImage"] {
         display: flex;
         justify-content: center;
         margin-bottom: 1rem;
     }
 
-    section[data-testid="stSidebar"] .hype-logo-wrapper video,
+    /* Remover botão de fullscreen e clique no logo */
+    section[data-testid="stSidebar"] div[data-testid="stImage"] button {
+        display: none !important;
+    }
+
     section[data-testid="stSidebar"] div[data-testid="stImage"] img {
         width: 130px;
         height: auto;
-        pointer-events: none;              /* não clicável */
+        pointer-events: none;
         animation: hypeFloat 2.5s ease-in-out infinite;
-    }
-
-    /* Remover botão de fullscreen do componente padrão de imagem, caso usado como fallback */
-    section[data-testid="stSidebar"] div[data-testid="stImage"] button {
-        display: none !important;
     }
 
     /* Centralizar títulos e textos “infos” da sidebar */
@@ -147,42 +144,16 @@ if "caption_input" not in st.session_state:
     st.session_state["caption_input"] = ""
 
 # =========================================================
-# LOGO NA SIDEBAR (VÍDEO MP4 + FALLBACK PNG)
+# LOGO NA SIDEBAR
 # =========================================================
 
-VIDEO_LOGO_PATH = "HypeLogo(1).mp4"
-STATIC_LOGO_PATH = "HypeLogo(1).png"  # fallback opcional (PNG com fundo transparente)
+LOGO_PATH = "HypeLogo(1).png"  # ideal: PNG com fundo transparente
 
 with st.sidebar:
-    if os.path.exists(VIDEO_LOGO_PATH):
-        try:
-            with open(VIDEO_LOGO_PATH, "rb") as f:
-                video_bytes = f.read()
-            video_b64 = base64.b64encode(video_bytes).decode("utf-8")
-
-            st.markdown(
-                f"""
-                <div class="hype-logo-wrapper">
-                    <video autoplay loop muted playsinline>
-                        <source src="data:video/mp4;base64,{video_b64}" type="video/mp4">
-                    </video>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-        except Exception as e:
-            st.sidebar.error(f"Error loading logo video: {e}")
-            # fallback para imagem estática
-            try:
-                st.image(STATIC_LOGO_PATH)
-            except Exception:
-                pass
-    else:
-        # Se o vídeo não existir, usa imagem estática
-        try:
-            st.image(STATIC_LOGO_PATH)
-        except Exception:
-            pass
+    try:
+        st.image(LOGO_PATH)  # tamanho controlado via CSS
+    except Exception:
+        pass
 
 # =========================================================
 # HEADER PRINCIPAL
