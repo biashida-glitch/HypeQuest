@@ -137,15 +137,15 @@ st.markdown("""
 
     /* LOGO: mostrar apenas a própria arte, sem quadrado extra */
     section[data-testid="stSidebar"] div[data-testid="stImage"] img {
-        width: 230px;          /* pode ajustar se quiser maior/menor */
+        width: 230px;          /* ajuste de tamanho do logo */
         height: auto;
         pointer-events: none;
-        border-radius: 0;      /* sem arredondar além do que já existe no arquivo */
-        box-shadow: none;      /* remove aquele quadrado/contorno extra */
+        border-radius: 0;
+        box-shadow: none;
         background: transparent;
     }
 
-    /* Centralizar textos da sidebar */
+    /* Títulos e textos gerais da sidebar */
     section[data-testid="stSidebar"] h1,
     section[data-testid="stSidebar"] h2,
     section[data-testid="stSidebar"] h3 {
@@ -159,29 +159,35 @@ st.markdown("""
         color: #E0D7FF;
     }
 
-    /* Cards de info/sucesso bem legíveis */
+    /* Cards de info/sucesso – fundo claro, texto quase preto, alinhado à esquerda */
     section[data-testid="stSidebar"] .stInfo > div {
         border-radius: 12px;
-        border: 1px solid #8FD0FF;
-        background: rgba(26, 115, 232, 0.18); /* azul mais claro */
-        color: #E9F2FF;
+        border: 1px solid #FBBF24;     /* amarelo suave */
+        background: #FFF7D6;           /* amarelo bem claro */
+        color: #111827;                /* quase preto */
         font-size: 12px;
+        text-align: left;
+        font-weight: 600;
     }
 
     section[data-testid="stSidebar"] .stSuccess > div {
         border-radius: 12px;
-        border: 1px solid #4ade80;
-        background: rgba(34, 197, 94, 0.18);
-        color: #bbf7d0;
+        border: 1px solid #22c55e;     /* verde */
+        background: #DCFCE7;           /* verde bem claro */
+        color: #111827;                /* quase preto */
         font-size: 12px;
+        text-align: left;
+        font-weight: 600;
     }
 
     section[data-testid="stSidebar"] .stError > div {
         border-radius: 12px;
         border: 1px solid #f97373;
-        background: rgba(248, 113, 113, 0.18);
-        color: #fee2e2;
+        background: #FEE2E2;
+        color: #111827;
         font-size: 12px;
+        text-align: left;
+        font-weight: 600;
     }
 
     /* Inputs mais alinhados com a paleta */
@@ -217,7 +223,7 @@ if "caption_input" not in st.session_state:
 # LOGO NA SIDEBAR – ESTÁTICO (PNG)
 # =========================================================
 
-LOGO_PATH = "HypeLogo(1).png"  # PNG com fundo transparente ou fundo próprio
+LOGO_PATH = "HypeLogo(1).png"  # PNG com fundo próprio / transparente
 
 with st.sidebar:
     try:
