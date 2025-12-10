@@ -94,7 +94,7 @@ st.markdown("""
         border-radius: 999px;
         border: 3px solid #1C0A4A;
         background: linear-gradient(180deg, #FFEE80 0%, #FFCF33 60%, #FFB800 100%);
-        color: #1C0A4A;
+        color: #111827;
         font-weight: bold;
         font-size: 15px;
         padding: 6px 22px;
