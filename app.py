@@ -712,7 +712,7 @@ if historical_df.empty or historical_df.shape[0] < 5:
 else:
     historical_df["followers"] = current_followers
     historical_df["engagement_rate"] = historical_df["engagement"] / current_followers
-    st.sidebar.success(f"Loaded real posts for {profile}: {len(historical_df)}")
+    st.sidebar.success(f"Loaded posts for {profile}: {len(historical_df)}")
 
 # Thresholds para LOW/MEDIUM/HIGH
 engagement_thresholds = compute_engagement_thresholds(historical_df)
