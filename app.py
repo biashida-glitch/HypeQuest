@@ -90,28 +90,31 @@ st.markdown("""
         box-shadow: 0 2px 0px #1C0A4A;
     }
 
-   .stButton>button {
+    /* Botão principal – texto preto forçado */
+    .stButton>button {
         border-radius: 999px;
         border: 3px solid #1C0A4A;
         background: linear-gradient(180deg, #FFEE80 0%, #FFCF33 60%, #FFB800 100%);
-        color: #111827;              /* texto quase preto */
+        color: #111827 !important;      /* texto quase preto */
         font-weight: bold;
         font-size: 15px;
         padding: 6px 22px;
         box-shadow: 0px 5px 0px #C57D00;
         text-transform: uppercase;
         letter-spacing: 1px;
-}
+    }
 
     .stButton>button:hover {
         background: linear-gradient(180deg, #FFF6A0 0%, #FFD447 60%, #FFC733 100%);
         box-shadow: 0px 4px 0px #A36200;
         transform: translateY(1px);
+        color: #111827 !important;      /* mantém preto no hover */
     }
 
     .stButton>button:active {
         box-shadow: 0px 2px 0px #7E4A00;
         transform: translateY(3px);
+        color: #111827 !important;      /* mantém preto no active */
     }
 
     /* Sidebar em roxo/azul */
@@ -162,9 +165,9 @@ st.markdown("""
     /* Cards de info/sucesso – fundo claro, texto quase preto, alinhado à esquerda */
     section[data-testid="stSidebar"] .stInfo > div {
         border-radius: 12px;
-        border: 1px solid #FBBF24;     /* amarelo suave */
-        background: #FFF7D6;           /* amarelo bem claro */
-        color: #111827;                /* quase preto */
+        border: 1px solid #FBBF24;
+        background: #FFF7D6;
+        color: #111827;
         font-size: 12px;
         text-align: left;
         font-weight: 600;
@@ -172,9 +175,9 @@ st.markdown("""
 
     section[data-testid="stSidebar"] .stSuccess > div {
         border-radius: 12px;
-        border: 1px solid #22c55e;     /* verde */
-        background: #DCFCE7;           /* verde bem claro */
-        color: #111827;                /* quase preto */
+        border: 1px solid #22c55e;
+        background: #DCFCE7;
+        color: #111827;
         font-size: 12px;
         text-align: left;
         font-weight: 600;
@@ -712,7 +715,7 @@ if historical_df.empty or historical_df.shape[0] < 5:
 else:
     historical_df["followers"] = current_followers
     historical_df["engagement_rate"] = historical_df["engagement"] / current_followers
-    st.sidebar.success(f"Loaded posts for {profile}: {len(historical_df)}")
+    st.sidebar.success(f"Loaded real posts for {profile}: {len(historical_df)}")
 
 # Thresholds para LOW/MEDIUM/HIGH
 engagement_thresholds = compute_engagement_thresholds(historical_df)
