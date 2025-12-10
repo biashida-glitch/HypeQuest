@@ -107,23 +107,24 @@ st.markdown("""
         100% { transform: translateY(0px); }
     }
 
-    /* Container do logo na sidebar centralizado */
-    section[data-testid="stSidebar"] div[data-testid="stImage"] {
+    /* Container do logo na sidebar centralizado (vídeo ou imagem) */
+    section[data-testid="stSidebar"] .hype-logo-wrapper {
         display: flex;
         justify-content: center;
         margin-bottom: 1rem;
     }
 
-    /* Remover botão de fullscreen e clique no logo */
-    section[data-testid="stSidebar"] div[data-testid="stImage"] button {
-        display: none !important;
-    }
-
+    section[data-testid="stSidebar"] .hype-logo-wrapper video,
     section[data-testid="stSidebar"] div[data-testid="stImage"] img {
         width: 130px;
         height: auto;
-        pointer-events: none;
+        pointer-events: none;              /* não clicável */
         animation: hypeFloat 2.5s ease-in-out infinite;
+    }
+
+    /* Remover botão de fullscreen do componente padrão de imagem, caso usado como fallback */
+    section[data-testid="stSidebar"] div[data-testid="stImage"] button {
+        display: none !important;
     }
 
     /* Centralizar títulos e textos “infos” da sidebar */
@@ -144,16 +145,29 @@ if "caption_input" not in st.session_state:
     st.session_state["caption_input"] = ""
 
 # =========================================================
-# LOGO NA SIDEBAR
+# LOGO NA SIDEBAR (VÍDEO MP4 + FALLBACK PNG)
 # =========================================================
 
-LOGO_PATH = "HypeLogo(1).png"  # ideal: PNG com fundo transparente
+VIDEO_LOGO_PATH = "HypeLogo(1).mp4"
+STATIC_LOGO_PATH = "HypeLogo(1).png"  # fallback opcional (PNG com fundo transparente)
 
 with st.sidebar:
-    try:
-        st.image(LOGO_PATH)  # tamanho controlado via CSS
-    except Exception:
-        pass
+    if os.path.exists(VIDEO_LOGO_PATH):
+        # Usando HTML para ter autoplay/loop/muted sem controles e sem clique
+        st.markdown(
+            f"""
+            <div class="hype-logo-wrapper">
+                <video src="{VIDEO_LOGO_PATH}" autoplay loop muted playsinline></video>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    else:
+        # Fallback para imagem estática, se o vídeo não estiver disponível
+        try:
+            st.image(STATIC_LOGO_PATH)
+        except Exception:
+            pass
 
 # =========================================================
 # HEADER PRINCIPAL
