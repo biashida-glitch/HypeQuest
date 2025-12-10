@@ -625,19 +625,19 @@ def classify_engagement_level(er: float, thresholds: dict):
     if er < low:
         return (
             "LOW",
-            "Below the typical range for this profile (bottom ~1/3 of historical posts).",
+            "Below the typical range for this profile.",
             "#ef4444",
         )
     elif er < high:
         return (
             "MEDIUM",
-            "Within the usual range for this profile (middle ~1/3 of historical posts).",
+            "Within the usual range for this profile.",
             "#eab308",
         )
     else:
         return (
             "HIGH",
-            "Above the usual range for this profile (top ~1/3 of historical posts).",
+            "Above the usual range for this profile.",
             "#22c55e",
         )
 
@@ -702,7 +702,7 @@ st.sidebar.info(f"Followers for {profile}: {current_followers:,}")
 
 # Histórico
 if cfg["use_real_api"] and META_TOKEN and cfg["instagram_id"]:
-    with st.spinner("Attempting to load real data from Meta API..."):
+    with st.spinner("Loading data..."):
         historical_df = fetch_historical_data(cfg["instagram_id"], META_TOKEN)
 
 if historical_df.empty or historical_df.shape[0] < 5:
@@ -717,7 +717,7 @@ if historical_df.empty or historical_df.shape[0] < 5:
 else:
     historical_df["followers"] = current_followers
     historical_df["engagement_rate"] = historical_df["engagement"] / current_followers
-    st.sidebar.success(f"Loaded real posts for {profile}: {len(historical_df)}")
+    st.sidebar.success(f"Loaded posts for {profile}: {len(historical_df)}")
 
 # Thresholds para LOW/MEDIUM/HIGH
 engagement_thresholds = compute_engagement_thresholds(historical_df)
@@ -1005,7 +1005,7 @@ if "last_result" in st.session_state:
 
     st.info(
         "This suggestion is generated from your original caption. "
-        "You can copy & paste it into the caption editor above and tweak it as you like."
+        "You can copy & paste it into the caption editor below and tweak it as you like."
     )
 
     st.text_area(
