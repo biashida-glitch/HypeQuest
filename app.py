@@ -90,18 +90,18 @@ st.markdown("""
         box-shadow: 0 2px 0px #1C0A4A;
     }
 
-    .stButton>button {
+   .stButton>button {
         border-radius: 999px;
         border: 3px solid #1C0A4A;
         background: linear-gradient(180deg, #FFEE80 0%, #FFCF33 60%, #FFB800 100%);
-        color: #111827;
+        color: #111827;              /* texto quase preto */
         font-weight: bold;
         font-size: 15px;
         padding: 6px 22px;
         box-shadow: 0px 5px 0px #C57D00;
         text-transform: uppercase;
         letter-spacing: 1px;
-    }
+}
 
     .stButton>button:hover {
         background: linear-gradient(180deg, #FFF6A0 0%, #FFD447 60%, #FFC733 100%);
